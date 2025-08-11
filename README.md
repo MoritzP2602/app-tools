@@ -6,9 +6,9 @@ A collection of tools for working with apprentice, including enhanced grid gener
 
 **Before installing this package, you must install:**
 
-Follow these instructions: https://gitlab.com/hepcedar/rivetbootstrap
 - **YODA >= 1.8.0**
 - **Rivet >= 3.0.0**
+Follow these instructions: https://gitlab.com/hepcedar/rivetbootstrap
 
 ## Installation
 
