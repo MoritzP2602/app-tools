@@ -1,0 +1,142 @@
+
+#!/bin/bash
+
+CHECK_PARAMS=1
+
+args=()
+for arg in "$@"; do
+    if [ "$arg" = "--no_params" ]; then
+        CHECK_PARAMS=0
+    else
+        args+=("$arg")
+    fi
+done
+set -- "${args[@]}"
+
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <input_dir1> <input_dir2> [input_dir3] ... <output_dir> [NPROC] [--no_params]"
+    echo "  <input_dir1> ... : Input directories containing (subdirectories with) YODA files"
+    echo "  <output_dir>     : Output directory for merged YODA files"
+    echo "  [NPROC]          : Number of parallel jobs (default: 4)"
+    echo "  [--no_params]    : Optional flag to skip checking params.dat files"
+    echo "Merges .yoda files from multiple input directories into a single output directory."
+    exit 1
+fi
+
+if [[ "${!#}" =~ ^[0-9]+$ ]]; then
+    NPROC="${!#}"
+    OUTPUT_DIR="${@:$(($#-1)):1}"
+    INPUT_DIRS=("${@:1:$(($#-2))}")
+else
+    NPROC=4
+    OUTPUT_DIR="${!#}"
+    INPUT_DIRS=("${@:1:$(($#-1))}")
+fi
+
+for i in "${!INPUT_DIRS[@]}"; do
+    INPUT_DIRS[i]="${INPUT_DIRS[i]%/}"
+done
+OUTPUT_DIR="${OUTPUT_DIR%/}"
+
+if [ ${#INPUT_DIRS[@]} -lt 2 ]; then
+    echo "Error: At least two input directories are required."
+    exit 1
+fi
+
+echo "Input directories: ${INPUT_DIRS[@]}"
+echo "Output directory: $OUTPUT_DIR"
+
+merge_multiple() {
+    file="$1"
+
+    INPUT_DIRS=()
+    for ((i=0; i<NUM_INPUT_DIRS; i++)); do
+        var_name="INPUT_DIR_$i"
+        INPUT_DIRS+=("${!var_name}")
+    done
+
+    relpath="${file#${INPUT_DIRS[0]}/}"
+
+    INPUT_FILES=()
+    PARAMS_FILES=()
+
+    for input_dir in "${INPUT_DIRS[@]}"; do
+        INPUT_FILES+=("$input_dir/$relpath")
+        SUBDIR=$(dirname "$relpath")
+        PARAMS_FILES+=("$input_dir/$SUBDIR/params.dat")
+    done
+
+    OUTPUT="$OUTPUT_DIR/$relpath"
+    SUBDIR=$(dirname "$relpath")
+    MERGED_PARAMS="$OUTPUT_DIR/$SUBDIR/params.dat"
+
+    if [ -f "$OUTPUT" ]; then
+        echo "Skipping: $OUTPUT already exists"
+        return
+    fi
+
+    all_exist=true
+    for input_file in "${INPUT_FILES[@]}"; do
+        if [ ! -f "$input_file" ]; then
+            all_exist=false
+            break
+        fi
+    done
+
+    if [ "$all_exist" = true ]; then
+        if [ "$CHECK_PARAMS" -eq 1 ]; then
+            for params_file in "${PARAMS_FILES[@]}"; do
+                if [ ! -f "$params_file" ]; then
+                    echo "Error: $params_file not found!" >&2
+                    exit 2
+                fi
+            done
+
+            reference_params="${PARAMS_FILES[0]}"
+            for ((i=1; i<${#PARAMS_FILES[@]}; i++)); do
+                if ! cmp -s "$reference_params" "${PARAMS_FILES[i]}"; then
+                    echo "Error: $reference_params and ${PARAMS_FILES[i]} differ!" >&2
+                    exit 2
+                fi
+            done
+
+            if [ ! -f "$MERGED_PARAMS" ]; then
+                mkdir -p "$(dirname "$MERGED_PARAMS")"
+                cp "$reference_params" "$MERGED_PARAMS"
+                echo "Copied $reference_params to $MERGED_PARAMS"
+            fi
+        fi
+
+        mkdir -p "$(dirname "$OUTPUT")"
+        if command -v yodamerge >/dev/null 2>&1; then
+            yodamerge "${INPUT_FILES[@]}" -o "$OUTPUT"
+        else
+            ~/Programs/local/bin/yodamerge "${INPUT_FILES[@]}" -o "$OUTPUT"
+        fi
+    else
+        echo "Skipping: One or more input files do not exist for $relpath"
+    fi
+}
+
+export INPUT_DIRS OUTPUT_DIR CHECK_PARAMS
+export -f merge_multiple
+
+for i in "${!INPUT_DIRS[@]}"; do
+    export "INPUT_DIR_$i=${INPUT_DIRS[i]}"
+done
+export NUM_INPUT_DIRS=${#INPUT_DIRS[@]}
+
+all_dirs_exist=true
+for input_dir in "${INPUT_DIRS[@]}"; do
+    if [ ! -d "$input_dir" ]; then
+        echo "Error: Input directory $input_dir does not exist."
+        all_dirs_exist=false
+    fi
+done
+
+if [ "$all_dirs_exist" = true ]; then
+    find "${INPUT_DIRS[0]}" -maxdepth 2 -type f -name "*.yoda" | xargs -n 1 -P "$NPROC" bash -c 'merge_multiple "$0"'
+else
+    echo "One or more input directories do not exist."
+    exit 1
+fi
