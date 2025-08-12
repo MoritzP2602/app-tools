@@ -33,6 +33,36 @@ def write_params(param_list, templates, outdir, fname="params.dat"):
                 tf.write(txt)
 
 
+def write_lookup_table(param_list, outdir):
+    """Write a lookup table with folder indices and parameter values."""
+    if not param_list:
+        return
+        
+    table_file = os.path.join(outdir, "params.dat")
+    
+    all_param_names = param_list[0].keys()
+    param_names = sorted([name for name in all_param_names 
+                         if isinstance(param_list[0][name], (int, float))])
+    
+    try:
+        with open(table_file, "w") as f:
+            f.write("index\t" + "\t".join(param_names) + "\n")
+            
+            for num, params in enumerate(param_list):
+                npad = f"{num}".zfill(1 + int(np.ceil(np.log10(len(param_list)))))
+                values = []
+                for name in param_names:
+                    value = params[name]
+                    if isinstance(value, (int, float)):
+                        values.append(f"{value:.6e}")
+                    else:
+                        values.append(str(value))
+                f.write(f"{npad}\t" + "\t".join(values) + "\n")
+
+    except IOError as e:
+        print(f"Warning: Cannot write lookup table '{table_file}': {e}")
+
+
 def sample_random(boxdef, npoints):
     boundaries = load_parameter_boundaries(boxdef)
     param_order = sorted(boundaries.keys())
@@ -118,27 +148,19 @@ def extract_params_from_minimum_file(filepath):
         print(f"Error: Cannot read file '{filepath}': {e}")
         return {}
         
-    in_params = False
     for line in lines:
-        line = line.strip()
-        if line.startswith("# Best fit point"):
-            in_params = True
+        if line.startswith("#"):
             continue
-        if in_params:
-            if not line or line.startswith("#"):
-                if line.startswith("#") and line != "# Best fit point":
-                    break
+        parts = line.split()
+        if len(parts) >= 2:
+            key = parts[0]
+            try:
+                val = float(parts[1])
+                params[key] = val
+            except ValueError:
                 continue
-            parts = line.split()
-            if len(parts) >= 2:
-                key = parts[0]
-                try:
-                    val = float(parts[1])
-                    params[key] = val
-                except ValueError:
-                    continue
-            else:
-                break
+        else:
+            break
     return params
 
 
@@ -170,7 +192,7 @@ def load_parameter_boundaries(boxdef):
     return boundaries
 
 
-def tune_mode(scan_dir, npoints, template_path, defaults_path=None):
+def tune_mode(scan_dir, template_path, defaults_path=None, outdir="newscan"):
     if not os.path.exists(scan_dir):
         print(f"Error: Scan directory '{scan_dir}' not found")
         sys.exit(1)
@@ -195,7 +217,7 @@ def tune_mode(scan_dir, npoints, template_path, defaults_path=None):
         sys.exit(1)
         
     template_name = os.path.basename(template_path)
-    out_base = os.path.join("newscan")
+    out_base = os.path.join(outdir)
     os.makedirs(out_base, exist_ok=True)
 
     if defaults is not None:
@@ -217,8 +239,6 @@ def tune_mode(scan_dir, npoints, template_path, defaults_path=None):
     if not tune_subdirs:
         print(f"Error: No tune_* subdirectories found in '{scan_dir}'")
         sys.exit(1)
-        
-    tune_subdirs = tune_subdirs[:int(npoints)]
 
     for subdir in tune_subdirs:
         full_subdir = os.path.join(scan_dir, subdir)
@@ -250,7 +270,7 @@ def tune_mode(scan_dir, npoints, template_path, defaults_path=None):
         print(f"Wrote {out_file}")
 
 
-def minmax_mode(boxdef, defaults_path, template_path, infofile_path=None):
+def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infofile_path=None):
     boundaries = load_parameter_boundaries(boxdef)
 
     if not os.path.exists(defaults_path):
@@ -296,7 +316,7 @@ def minmax_mode(boxdef, defaults_path, template_path, infofile_path=None):
         
     template_name = os.path.basename(template_path)
     templates = {template_name: template_content}
-    write_params(param_sets, templates, "minmaxscan")
+    write_params(param_sets, templates, outdir)
 
 
 def main():
@@ -304,10 +324,11 @@ def main():
     parser.add_argument("parameters", help="Parameter box (json/txt), newscan_dir (existing params), or scan_dir (for tune mode)")
     parser.add_argument("template", help="Template file")
     parser.add_argument("npoints", nargs="?", type=int, help="Number of points to sample (only for random/uniform mode with json/txt parameters)")
-    parser.add_argument("--mode", choices=["random", "uniform", "tune", "minmax"], default="random", 
-                       help="Sampling mode (default: random)")
+    parser.add_argument("--mode", choices=["random", "uniform", "tune", "minmax"], default="random", help="Sampling mode (default: random)")
     parser.add_argument("-s", "--seed", type=int, help="Random seed (for random mode)")
     parser.add_argument("--default", help="Defaults.json file (for tune mode)")
+    parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
+    parser.add_argument("--table", action="store_true", help="Create a lookup table (params.dat) with folder indices and parameter values (only for random/uniform modes)")
     args = parser.parse_args()
 
     if not os.path.exists(args.parameters):
@@ -316,6 +337,10 @@ def main():
 
     if not os.path.exists(args.template):
         print(f"Error: Template file '{args.template}' not found")
+        sys.exit(1)
+
+    if os.path.exists(args.outdir):
+        print(f"Error: Output directory '{args.outdir}' already exists. Please remove it or choose a different name.")
         sys.exit(1)
 
     print(f"Running in {args.mode} mode")
@@ -338,6 +363,8 @@ def main():
             print("Warning: npoints argument ignored in tune mode (will process all tune directories)")
         if args.seed is not None:
             print("Warning: --seed argument ignored in tune mode")
+        if args.table:
+            print("Warning: --table argument ignored in tune mode")
     elif args.mode == "minmax":
         if not is_json_txt:
             print("Error: minmax mode requires a parameter file (json/txt)")
@@ -349,6 +376,8 @@ def main():
         if not args.default:
             print("Error: minmax mode requires --default defaults.json file")
             sys.exit(1)
+        if args.table:
+            print("Warning: --table argument ignored in minmax mode (automatically creates lookup table)")
     elif args.mode in ["random", "uniform"]:
         if is_newscan_dir:
             if args.npoints is not None:
@@ -356,6 +385,8 @@ def main():
             if args.seed is not None:
                 print("Warning: --seed argument ignored when using newscan directory")
         elif is_json_txt:
+            if args.mode == "uniform" and args.seed is not None:
+                print("Warning: --seed argument ignored in uniform mode with parameter file")
             if args.npoints is None:
                 print("Error: npoints required for random/uniform mode with parameter file")
                 sys.exit(1)
@@ -367,20 +398,21 @@ def main():
             sys.exit(1)
 
     if args.mode == "tune":
-        tune_mode(args.parameters, None, args.template, args.default)
+        print(f"Loading parameters from: {args.parameters}...")
+        tune_mode(args.parameters, args.template, args.default, args.outdir)
         return
 
     if args.mode == "minmax":
-        infofile_path = os.path.join("minmaxscan", "params.dat")
-        print("Sampling new parameters")
-        minmax_mode(args.parameters, args.default, args.template, infofile_path=infofile_path)
+        infofile_path = os.path.join(args.outdir, "params.dat")
+        print("Sampling new parameters...")
+        minmax_mode(args.parameters, args.default, args.template, args.outdir, infofile_path=infofile_path)
         return
 
     if is_newscan_dir:
-        print(f"Loading parameters from: {args.parameters}")
+        print(f"Loading parameters from: {args.parameters}...")
         param_list = load_params_from_folders(args.parameters, npoints=args.npoints)
     else:
-        print("Sampling new parameters")
+        print("Sampling new parameters...")
         if args.seed is not None and args.mode == "random":
             np.random.seed(args.seed)
             print(f"Using random seed: {args.seed}")
@@ -399,7 +431,10 @@ def main():
 
     template_name = os.path.basename(args.template)
     templates = {template_name: template_content}
-    write_params(param_list, templates, "newscan")
+    write_params(param_list, templates, args.outdir)
+    
+    if args.table:
+        write_lookup_table(param_list, args.outdir)
 
 
 if __name__ == "__main__":

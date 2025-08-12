@@ -17,6 +17,11 @@ merge_dir() {
     YODA=$(basename "$dir")
     OUTFILE="$dir/${YODA}.yoda"
 
+    if [ -f "$OUTFILE" ]; then
+        echo "Skipping $dir: $OUTFILE already exists."
+        return
+    fi
+
     mapfile -t FILES < <(find "$dir" -mindepth 2 -maxdepth 2 -type f \( -name '*.yoda' -o -name '*.yoda.gz' \))
 
     if [ "${#FILES[@]}" -eq 0 ]; then
