@@ -1,6 +1,9 @@
 # App Tools
 
-A collection of tools for working with apprentice, including enhanced grid generation, combining several newscan directories and chi-squared analysis.
+A collection of tools for working with apprentice, a program for tuning MC event generators (DOI: 10.1051/epjconf/202125103060, GitHub repository).
+These additional tools provide functionalities such as improved grid generation, merging multiple newscan directories, and performing chi-squared analyses.
+
+Several of the tools are specifically tailored to streamline the tuning of multiple event types within apprentice.
 
 ## Prerequisites
 
@@ -9,7 +12,7 @@ A collection of tools for working with apprentice, including enhanced grid gener
 - **YODA >= 1.8.0**
 - **Rivet >= 3.0.0**
 
-Follow these instructions: https://gitlab.com/hepcedar/rivetbootstrap
+You can follow these instructions: https://gitlab.com/hepcedar/rivetbootstrap
 
 ## Installation
 

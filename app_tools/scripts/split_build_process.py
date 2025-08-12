@@ -89,11 +89,11 @@ def split_weight_file(input_path, N):
             f.writelines(chunk)
         out_paths.append(out_path)
 
-    with open("folder_weights.txt", "w") as f:
+    with open("weight_files.txt", "w") as f:
         for path in out_paths:
             f.write(path + "\n")
 
-    print(f"Done. Wrote {N} files to {out_dir} and listed them in folder_weights.txt.")
+    print(f"Done. Wrote {N} files to {out_dir} and listed them in weight_files.txt.")
 
 
 def main():

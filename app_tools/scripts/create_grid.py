@@ -339,9 +339,10 @@ def main():
         print(f"Error: Template file '{args.template}' not found")
         sys.exit(1)
 
-    if os.path.exists(args.outdir):
-        print(f"Error: Output directory '{args.outdir}' already exists. Please remove it or choose a different name.")
-        sys.exit(1)
+    if args.mode in ["random", "uniform", "minmax"]:
+        if os.path.exists(args.outdir):
+            print(f"Error: Output directory '{args.outdir}' already exists. Please remove it or choose a different name.")
+            sys.exit(1)
 
     print(f"Running in {args.mode} mode")
 
