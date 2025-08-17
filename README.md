@@ -17,7 +17,7 @@ You can follow these instructions: https://gitlab.com/hepcedar/rivetbootstrap
 ## Installation
 
 ```bash
-https://github.com/MoritzP2602/app-tools.git
+git clone https://github.com/MoritzP2602/app-tools.git
 cd app-tools
 pip install .
 ```
