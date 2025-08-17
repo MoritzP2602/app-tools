@@ -3,7 +3,7 @@
 A collection of tools for working with apprentice, a program for tuning MC event generators (DOI: 10.1051/epjconf/202125103060, GitHub repository).
 These additional tools provide functionalities such as improved grid generation, merging multiple newscan directories, and performing chi-squared analyses.
 
-Several of the tools are specifically tailored to streamline the tuning of multiple event types within apprentice.
+Several of the tools are specifically tailored to streamline the tuning of multiple event types within apprentice, e.g. a combined tune on Drell-Yan and dijet data.
 
 ## Prerequisites
 
@@ -17,6 +17,7 @@ You can follow these instructions: https://gitlab.com/hepcedar/rivetbootstrap
 ## Installation
 
 ```bash
+https://github.com/MoritzP2602/app-tools.git
 cd app-tools
 pip install .
 ```
@@ -57,7 +58,7 @@ app-tools-chi_squared weights.txt data1.yoda data2.yoda --plots --default defaul
 app-tools-combine_weights weight_file1.txt 1.0 weight_file2.txt 0.5 -o combined.txt
 
 # Create parameter grid
-app-tools-create_grid parameter.json template.yaml 500 --mode random
+app-tools-create_grid parameter.json template.yaml 500
 
 # Prepare run directories
 app-tools-prepare_run_directories newscan/ 10
