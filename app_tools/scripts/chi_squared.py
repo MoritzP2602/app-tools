@@ -807,7 +807,7 @@ def main():
     parser.add_argument("--weighted", action="store_true", default=False, help="Enable weighted chi2 calculation")
     parser.add_argument("-p", "--plots", action="store_true", default=False, help="Enable plotting of chi2 per analysis")
     parser.add_argument("-d", "--default", default=None, help="Path to a YODA file for comparison of chi2 (default: None)")
-    parser.add_argument("--default-label", default="default", help="Label for the default YODA file in output and plots")
+    parser.add_argument("--default_label", default="default", help="Label for the default YODA file in output and plots")
     parser.add_argument("-e", "--envelope", nargs=2, metavar=("up.yoda", "dn.yoda"), help="Check if reference values are within envelope (up.yoda dn.yoda)")
     parser.add_argument("-t", "--tag", default=None, help="If set, only use YODA files with this tag from the given directory")
     parser.add_argument("-o", "--outdir", default=None, help="Output directory for chi2 plots")
