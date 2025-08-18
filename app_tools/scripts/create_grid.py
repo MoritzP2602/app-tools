@@ -192,7 +192,7 @@ def load_parameter_boundaries(boxdef):
     return boundaries
 
 
-def tune_mode(scan_dir, template_path, defaults_path=None, outdir="newscan"):
+def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="newscan"):
     if not os.path.exists(scan_dir):
         print(f"Error: Scan directory '{scan_dir}' not found")
         sys.exit(1)
@@ -234,10 +234,10 @@ def tune_mode(scan_dir, template_path, defaults_path=None, outdir="newscan"):
         print(f"Wrote default values to {out_file}")
 
     tune_subdirs = sorted([d for d in os.listdir(scan_dir) 
-                          if d.startswith("tune_") and os.path.isdir(os.path.join(scan_dir, d))])
-    
+                          if tune_tag in d and os.path.isdir(os.path.join(scan_dir, d))])
+
     if not tune_subdirs:
-        print(f"Error: No tune_* subdirectories found in '{scan_dir}'")
+        print(f"Error: No {tune_tag}* subdirectories found in '{scan_dir}'")
         sys.exit(1)
 
     for subdir in tune_subdirs:
@@ -326,8 +326,9 @@ def main():
     parser.add_argument("npoints", nargs="?", type=int, help="Number of points to sample (only for random/uniform mode with json/txt parameters)")
     parser.add_argument("--mode", choices=["random", "uniform", "tune", "minmax"], default="random", help="Sampling mode (default: random)")
     parser.add_argument("-s", "--seed", type=int, help="Random seed (for random mode)")
-    parser.add_argument("--default", help="Defaults.json file (for tune mode)")
+    parser.add_argument("-d", "--default", help="Defaults.json file (for tune mode)")
     parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
+    parser.add_argument("--tune_tag", help="Prefix for tune directories (default: tune_)")
     parser.add_argument("--table", action="store_true", help="Create a lookup table (params.dat) with folder indices and parameter values (only for random/uniform modes)")
     args = parser.parse_args()
 
@@ -366,19 +367,23 @@ def main():
             print("Warning: --seed argument ignored in tune mode")
         if args.table:
             print("Warning: --table argument ignored in tune mode")
+
     elif args.mode == "minmax":
         if not is_json_txt:
             print("Error: minmax mode requires a parameter file (json/txt)")
+            sys.exit(1)
+        if not args.default:
+            print("Error: minmax mode requires --default defaults.json file")
             sys.exit(1)
         if args.npoints is not None:
             print("Warning: npoints argument ignored in minmax mode (automatically set to 2 * number of parameters)")
         if args.seed is not None:
             print("Warning: --seed argument ignored in minmax mode")
-        if not args.default:
-            print("Error: minmax mode requires --default defaults.json file")
-            sys.exit(1)
+        if args.tune_tag is not None:
+            print("Warning: --tune_tag argument ignored in minmax mode")
         if args.table:
             print("Warning: --table argument ignored in minmax mode (automatically creates lookup table)")
+    
     elif args.mode in ["random", "uniform"]:
         if is_newscan_dir:
             if args.npoints is not None:
@@ -386,21 +391,27 @@ def main():
             if args.seed is not None:
                 print("Warning: --seed argument ignored when using newscan directory")
         elif is_json_txt:
-            if args.mode == "uniform" and args.seed is not None:
-                print("Warning: --seed argument ignored in uniform mode with parameter file")
             if args.npoints is None:
                 print("Error: npoints required for random/uniform mode with parameter file")
                 sys.exit(1)
             if args.npoints <= 0:
                 print("Error: Number of points must be positive")
                 sys.exit(1)
+            if args.mode == "uniform" and args.seed is not None:
+                print("Warning: --seed argument ignored in uniform mode with parameter file")
         else:
             print("Error: random/uniform mode requires either a parameter file (json/txt) or newscan directory")
             sys.exit(1)
+        if args.default is not None:
+            print("Warning: --default argument ignored in random/uniform mode")
+        if args.tune_tag is not None:
+            print("Warning: --tune_tag argument ignored in random/uniform mode")
 
     if args.mode == "tune":
         print(f"Loading parameters from: {args.parameters}...")
-        tune_mode(args.parameters, args.template, args.default, args.outdir)
+        if args.tune_tag is None:
+            args.tune_tag = "tune_"
+        tune_mode(args.parameters, args.template, args.tune_tag, args.default, args.outdir)
         return
 
     if args.mode == "minmax":
