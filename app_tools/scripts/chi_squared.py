@@ -805,10 +805,11 @@ def main():
     parser.add_argument("yoda_files", nargs="+", help="Path(s) to one or more YODA files or a directory")
     parser.add_argument("--labels", nargs="+", help="Labels for each YODA file (same order)")
     parser.add_argument("--weighted", action="store_true", default=False, help="Enable weighted chi2 calculation")
-    parser.add_argument("--plots", action="store_true", default=False, help="Enable plotting of chi2 per analysis")
-    parser.add_argument("--default", default=None, help="Path to a YODA file for comparison of chi2 (default: None)")
+    parser.add_argument("-p", "--plots", action="store_true", default=False, help="Enable plotting of chi2 per analysis")
+    parser.add_argument("-d", "--default", default=None, help="Path to a YODA file for comparison of chi2 (default: None)")
     parser.add_argument("--default-label", default="default", help="Label for the default YODA file in output and plots")
-    parser.add_argument("--envelope", nargs=2, metavar=("up.yoda", "dn.yoda"), help="Check if reference values are within envelope (up.yoda dn.yoda)")
+    parser.add_argument("-e", "--envelope", nargs=2, metavar=("up.yoda", "dn.yoda"), help="Check if reference values are within envelope (up.yoda dn.yoda)")
+    parser.add_argument("-t", "--tag", default=None, help="If set, only use YODA files with this tag from the given directory")
     parser.add_argument("-o", "--outdir", default=None, help="Output directory for chi2 plots")
     parser.add_argument("--debug", action="store_true", default=False, help="Enable debug output")
     args = parser.parse_args()
@@ -890,7 +891,9 @@ def process_directory(args, loader, weights, valid_bins=None):
     avg_chi2_dict = {}
     ndf_dict = {}
 
-    yoda_files = list(yoda_path.glob("*.yoda"))
+    yoda_files = list(yoda_path.glob("*.yoda")) + list(yoda_path.glob("*.yoda.gz"))
+    if args.tag:
+        yoda_files = [f for f in yoda_files if args.tag in f.name]
     for yfile in yoda_files:
         differences, squared_errors, bin_weights, bin_names = loader.get_bin_differences(
             str(yfile), weights, include_ref_error=True, debug=args.debug)
@@ -905,7 +908,9 @@ def process_directory(args, loader, weights, valid_bins=None):
 
     for subfolder in yoda_path.iterdir():
         if subfolder.is_dir():
-            yoda_files = list(subfolder.glob("*.yoda"))
+            yoda_files = list(subfolder.glob("*.yoda")) + list(subfolder.glob("*.yoda.gz"))
+            if args.tag:
+                yoda_files = [f for f in yoda_files if args.tag in f.name]
             if not yoda_files:
                 continue
             for yfile in yoda_files:
