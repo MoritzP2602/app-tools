@@ -326,7 +326,7 @@ def main():
     parser.add_argument("npoints", nargs="?", type=int, help="Number of points to sample (only for random/uniform mode with json/txt parameters)")
     parser.add_argument("--mode", choices=["random", "uniform", "tune", "minmax"], default="random", help="Sampling mode (default: random)")
     parser.add_argument("-s", "--seed", type=int, help="Random seed (for random mode)")
-    parser.add_argument("-d", "--default", help="Defaults.json file (for tune mode)")
+    parser.add_argument("-d", "--default", help="Defaults.json file (for tune/minmax mode)")
     parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
     parser.add_argument("--tune_tag", help="Prefix for tune directories (default: tune_)")
     parser.add_argument("--table", action="store_true", help="Create a lookup table (params.dat) with folder indices and parameter values (only for random/uniform modes)")
@@ -345,17 +345,18 @@ def main():
             print(f"Error: Output directory '{args.outdir}' already exists. Please remove it or choose a different name.")
             sys.exit(1)
 
-    print(f"Running in {args.mode} mode")
-
     is_json_txt = args.parameters.endswith(('.json', '.txt'))
     is_directory = os.path.isdir(args.parameters)
-    
+
     if args.mode == "tune":
         is_scan_dir = is_directory
         is_newscan_dir = False
     else:
         is_scan_dir = False
         is_newscan_dir = is_directory
+
+    if not is_newscan_dir:
+        print(f"Running in {args.mode} mode")
 
     if args.mode == "tune":
         if not is_scan_dir:
@@ -400,7 +401,7 @@ def main():
             if args.mode == "uniform" and args.seed is not None:
                 print("Warning: --seed argument ignored in uniform mode with parameter file")
         else:
-            print("Error: random/uniform mode requires either a parameter file (json/txt) or newscan directory")
+            print("Error: requires either a parameter file (json/txt) or newscan directory to sample/load parameters")
             sys.exit(1)
         if args.default is not None:
             print("Warning: --default argument ignored in random/uniform mode")
