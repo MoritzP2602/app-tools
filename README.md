@@ -1,6 +1,6 @@
 # App Tools
 
-A collection of tools for working with apprentice, a program for tuning MC event generators (DOI: 10.1051/epjconf/202125103060, GitHub repository).
+A collection of tools for working with apprentice, a program for tuning MC event generators (DOI: 10.1051/epjconf/202125103060, GitHub repository https://github.com/HEPonHPC/apprentice).
 These additional tools provide functionalities such as improved grid generation, merging multiple newscan directories, and performing chi-squared analyses.
 
 Several of the tools are specifically tailored to streamline the tuning of multiple event types within apprentice, e.g. a combined tune on Drell-Yan and dijet data.
@@ -48,33 +48,59 @@ This package automatically installs:
 - `app-tools-yodamerge.sh`: Merge YODA files in directories
 - `app-tools-yodamerge_directories.sh`: Merge multiple (newscan) directories
 
-## Usage Examples
+## Usage
 
+Chi-squared analysis: 
 ```bash
-# Chi-squared analysis
-app-tools-chi_squared weights.txt data1.yoda data2.yoda --plots --default default.yoda
-
-# Combine weight files
-app-tools-combine_weights weight_file1.txt 1.0 weight_file2.txt 0.5 -o combined.txt
-
-# Create parameter grid
-app-tools-create_grid parameter.json template.yaml 500
-
-# Prepare run directories
-app-tools-prepare_run_directories newscan/ 10
-
-# Merge YODA files
-app-tools-yodamerge newscan/
-
-# Merge different newscan directories
-app-tools-yodamerge_directories newscan1/ newscan2/ outdir/
-
-# Extract observables from YODA files and write weights
-app-tools-write_weights data.yoda -o data_weights.txt
-
-# Split the build process (used in combination with app-build)
-app-tools-split_build_process weights.txt 20
-app-tools-split_build_process app_5_0 20
+# get chi-squared values for all yoda files in a directory and all subdirectories (e.g. newscan/), use --tags to filter .yoda files (e.g. git hash)
+app-tools-chi_squared directory/ [--weights weights.txt] [--weighted] [--tags tag1 tag2]
+# get chi-squared values for all yoda files, --plots creates plots for each analysis, --default creates additional ratio plots
+app-tools-chi_squared data1.yoda [data2.yoda ...] [--weights weights.txt] [--labels label1 label2 ...] [--plots] [--default default.yoda] [--default_label default_label]
+```
+Combine weight files:
+```bash
+# combine and scale multiple weight files
+app-tools-combine_weights weight_file1.txt factor1 [weight_file2.txt factor2 ...] -o combined.txt
+```
+Create parameter grid:
+```bash
+# create grid with n points, with parameters sampled randomly within specified intervalls (same function as app-sample)
+app-tools-create_grid parameter.json template.yaml npoints [--seed s] [--table] [-o outdir] (--mode random)
+# copy grid from another directory
+app-tools-create_grid directory/ template.yaml [--table] [-o outdir]
+# create grid with n points, with parameters sampled uniformly within the specified intervalls
+app-tools-create_grid parameter.json template.yaml n --mode uniform [--table] [-o outdir]
+# create grid with tuned parameters, loaded from tune directories (created with app-tune2) within specified directory
+app-tools-create_grid scan_directory/ template.yaml --mode tune [--default default.json] [--tune_tag foldertag] [-o outdir]
+# create grid with min/max values of the parameters, used to ensure a suitable parameter range
+app-tools-create_grid directory template.yaml --default default.json --mode minmax [-o outdir]
+```
+Prepare run directories:
+```bash
+# creates n subfolders in each subfolder of a specified directory and writes path to new subfolders in run_directories.txt file (skips subfolders, that already have subfolders)
+app-tools-prepare_run_directory directory/ n
+```
+Merge YODA files:
+```bash
+# uses yodamerge to merge all .yoda (and .yoda.gz) files in every subfolder of a specified directory
+app-tools-yodamerge directory/ [nproc]
+```
+Merge different directories:
+```bash
+# uses yodamerge to merge the .yoda (and .yoda.gz) files in the subfolders with the same name (and params.dat file) from all input directories (e.g. to merge multiple newscan directories)
+app-tools-yodamerge_directories inputdir1/ inputdir2/ [inputdir3/ ...] outdir/ [nproc]
+```
+Extract observables and write weights:
+```bash
+# creates a new weights file from specified .yoda file (this file can be used for app-build)
+app-tools-write_weights file.yoda -o weights.txt
+```
+Split the build process (used in combination with app-build):
+```bash
+# splits a weight file in n files saved in the directory weight_files and writes the path to each file in weight_files.txt
+app-tools-split_build_process weights.txt n
+# merges n .json files in a specified input directory in the file directory.json
+app-tools-split_build_process directory/ n
 ```
 
 ## Troubleshooting
