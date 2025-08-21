@@ -1,24 +1,40 @@
 
 #!/bin/bash
 
+OUTFILE="run_directories.txt"
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o)
+            shift
+            if [ -z "${1-}" ]; then echo "-o requires an argument" >&2; exit 1; fi
+            OUTFILE="$1"; shift ;;
+        *) POSITIONAL+=("$1"); shift ;;
+    esac
+done
+while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done
+set -- "${POSITIONAL[@]}"
+
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <folder> [nsubfolders]"
+    echo "Usage: $0 [-o outfile] <folder> [nsubfolders]"
     echo "  <folder>      : Directory in which to create or list subfolders"
     echo "  [nsubfolders] : (Optional) Number of subfolders to create in each directory"
-    echo "Creates subfolders for all subfolders in the specified directory and lists them in folder.txt."
+    echo "  -o outfile    : (Optional) Output filename (default: run_directories.txt)"
+    echo "Creates subfolders for all subfolders in the specified directory and lists them in $OUTFILE."
     exit 1
 fi
 
 PREFIX="${1%/}"
 
-if [ -f "run_directories.txt" ]; then
-    rm "run_directories.txt"
+if [ -f "$OUTFILE" ]; then
+    rm "$OUTFILE"
 fi
 
 if [ -d "$PREFIX" ]; then
     if [ -z "$2" ]; then
         for dir in "$PREFIX"/*; do
-            echo "$dir" >> "run_directories.txt"
+            [ -d "$dir" ] || continue
+            echo "$dir" >> "$OUTFILE"
         done
     else
         n="$2"
@@ -36,7 +52,7 @@ if [ -d "$PREFIX" ]; then
                     sub_dir=$(printf "$dir/%0${width}d" "$i")
                     mkdir "$sub_dir"
                     echo "Created: $sub_dir"
-                    echo "$sub_dir" >> "run_directories.txt"
+                    echo "$sub_dir" >> "$OUTFILE"
                 done
             fi
         done

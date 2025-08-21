@@ -1,5 +1,4 @@
 
-from multiprocessing.util import debug
 import os
 import yoda
 import rivet
@@ -171,55 +170,55 @@ class yodaLoader:
             y_err = [0.0]
         return bin_names, y_values, y_err
 
-    def get_bin_differences(self, _yd, weights=None, include_ref_error=True, debug=False):
+    def get_bin_differences(self, yoda_file, weights=None, include_ref_error=True, debug=False):
         """
         Compute differences between data and reference YODA files.
 
-        :param _yd: Path to the YODA file containing data.
+        :param yoda_file: Path to the YODA file containing data.
         :param weights: Optional weights for the observables.
         :param include_ref_error: Whether to include reference errors in the computation.
         :param debug: Whether to print debug information.
         :return: Tuple of differences, squared errors, bin weights, and bin names.
         """
         if debug:
-            print(f"Executing get_bin_differences for {_yd}")
+            print(f"Executing get_bin_differences for {yoda_file}")
 
-        yd = yoda.readYODA(_yd)
+        yd = yoda.readYODA(yoda_file)
         differences = []
         squared_errors = []
         bin_names = []
         bin_weights = []
         yoda_version = tuple(map(int, yoda.__version__.split(".")))
 
-        for a in yd:
-            if weights is not None and (a not in weights and not any(k.startswith(a + "#") for k in weights)):
+        for obs in yd:
+            if weights is not None and (obs not in weights and not any(k.startswith(obs + "#") for k in weights)):
                 if debug:
-                    print(f"  Skipping observable {a} (not in weights file)")
+                    print(f"  Skipping observable {obs} (not in weights file)")
                 continue
             try:
-                analysis_name = a.split("/")[1].split(":")[0]
+                analysis_name = obs.split("/")[1].split(":")[0]
             except (IndexError, AttributeError):
                 if debug:
-                    print(f"  Failed to parse analysis name from {a}")
+                    print(f"  Failed to parse analysis name from {obs}")
                 continue
             
             obs_weight = 1.0
-            if weights and a in weights:
-                obs_weight = weights[a]
+            if weights and obs in weights:
+                obs_weight = weights[obs]
             
             try:
                 ref_yoda = self.load(analysis_name)
-                a_ref = f"/REF/{analysis_name}/{a.split('/')[-1]}"
-                obj = yd[a]
-                ref_obj = ref_yoda.get(a_ref)
+                obs_ref = f"/REF/{analysis_name}/{obs.split('/')[-1]}"
+                obj = yd[obs]
+                ref_obj = ref_yoda.get(obs_ref)
                 
                 if ref_obj is None:
                     if debug:
-                        print(f"  Reference for {analysis_name} not found, skipping {a}")
+                        print(f"  Reference data for {obs} not found, tried loading from {analysis_name}, skipping...")
                     continue
             except (FileNotFoundError, KeyError) as e:
                 if debug:
-                    print(f"  Error loading reference data for {analysis_name}: {e}")
+                    print(f"  Error loading reference data from {analysis_name}: {e}")
                 continue
 
             if debug:
@@ -249,7 +248,7 @@ class yodaLoader:
 
             if len(data_bins) != len(ref_bins):
                 if debug:
-                    print(f"  Data and reference bins do not match in length: {len(data_bins)} vs {len(ref_bins)} for observable {a}")
+                    print(f"  Data and reference bins do not match in length: {len(data_bins)} vs {len(ref_bins)} for observable {obs}")
                 continue
             
             n_bins = min(len(data_bins), len(ref_bins))

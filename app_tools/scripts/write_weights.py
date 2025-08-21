@@ -2,12 +2,12 @@
 import argparse
 
 
-def extract_observables(yodafile):
+def extract_observables(yoda_file):
     observables = []
     current_path = None
     bin_count = 0
 
-    with open(yodafile, "r") as f:
+    with open(yoda_file, "r") as f:
         for line in f:
             line = line.strip()
             if line.startswith("BEGIN"):
@@ -28,12 +28,12 @@ def extract_observables(yodafile):
 
 def main():
     parser = argparse.ArgumentParser(description="Extract observables from YODA file and write weights")
-    parser.add_argument("yodafile", help="YODA file to process")
+    parser.add_argument("yoda_file", help="YODA file to process")
     parser.add_argument("-o", "--output", default="weights.txt", help="Output weights file name (default: weights.txt)")
     
     args = parser.parse_args()
 
-    all_observables = extract_observables(args.yodafile)
+    all_observables = extract_observables(args.yoda_file)
     
     excluded_patterns = ["/REF", "/RAW", "/MC", "/tmp", "/sum", "/total", "[", "/_"]
     observables = []

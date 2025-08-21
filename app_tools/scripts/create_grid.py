@@ -342,7 +342,7 @@ def main():
 
     if args.mode in ["random", "uniform", "minmax"]:
         if os.path.exists(args.outdir):
-            print(f"Error: Output directory '{args.outdir}' already exists. Please remove it or choose a different name.")
+            print(f"Error: Output directory '{args.outdir}' already exists, please remove it or choose a different name")
             sys.exit(1)
 
     is_json_txt = args.parameters.endswith(('.json', '.txt'))

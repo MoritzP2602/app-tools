@@ -2,7 +2,6 @@
 #!/bin/bash
 
 CHECK_PARAMS=1
-
 args=()
 for arg in "$@"; do
     if [ "$arg" = "--no_params" ]; then
@@ -14,7 +13,7 @@ done
 set -- "${args[@]}"
 
 if [ $# -lt 3 ]; then
-    echo "Usage: $0 <input_dir1> <input_dir2> [input_dir3] ... <output_dir> [NPROC] [--no_params]"
+    echo "Usage: $0 [--no_params] <input_dir1> <input_dir2> [input_dir3] ... <output_dir> [NPROC]"
     echo "  <input_dir1> ... : Input directories containing (subdirectories with) YODA files"
     echo "  <output_dir>     : Output directory for merged YODA files"
     echo "  [NPROC]          : Number of parallel jobs (default: 4)"
