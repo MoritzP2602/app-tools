@@ -52,10 +52,10 @@ This package automatically installs:
 
 Chi-squared analysis: 
 ```bash
-# get chi-squared values for all yoda files in a directory and all subdirectories (e.g. newscan/), use --tag to filter .yoda files (e.g. git hash)
-app-tools-chi_squared weights.txt directory/ [--tag nametag]
+# get chi-squared values for all yoda files in a directory and all subdirectories (e.g. newscan/), use --tags to filter .yoda files (e.g. git hash)
+app-tools-chi_squared directory/ [--weights weights.txt] [--weighted] [--tags tag1 tag2]
 # get chi-squared values for all yoda files, --plots creates plots for each analysis, --default creates additional ratio plots
-app-tools-chi_squared weights.txt data1.yoda [data2.yoda ...] [--labels label1 label2 ...] [--plots] [--default default.yoda] [--default_label default_label]
+app-tools-chi_squared data1.yoda [data2.yoda ...] [--weights weights.txt] [--labels label1 label2 ...] [--plots] [--default default.yoda] [--default_label default_label]
 ```
 Combine weight files:
 ```bash

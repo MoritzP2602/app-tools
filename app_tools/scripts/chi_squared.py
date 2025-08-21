@@ -1,4 +1,5 @@
 
+from multiprocessing.util import debug
 import os
 import yoda
 import rivet
@@ -47,7 +48,7 @@ class yodaLoader:
             elif os.path.exists(yoda_path):
                 ref_yoda = yoda.readYODA(yoda_path)
             else:
-                raise FileNotFoundError(f"Neither {gz_path} nor {yoda_path} found.")
+                raise FileNotFoundError(f"Neither {gz_path} nor {yoda_path} found")
             self.yodas[analysis_name] = ref_yoda
             return ref_yoda
         else:
@@ -214,7 +215,7 @@ class yodaLoader:
                 
                 if ref_obj is None:
                     if debug:
-                        print(f"  Reference object not found for {a_ref}")
+                        print(f"  Reference for {analysis_name} not found, skipping {a}")
                     continue
             except (FileNotFoundError, KeyError) as e:
                 if debug:
@@ -419,12 +420,17 @@ def obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=False
 
     obs_bins = {}
     chi2s = {}
+
+    if valid_bins is not None and debug:
+        valid_mask = np.array([name in valid_bins for name in bin_names])
+        if debug:
+            filtered_count = len([bin_names[i] for i in range(len(bin_names)) if valid_mask[i]])
+            total_count = len(valid_mask)
+            print(f"  Envelope filtering: using {filtered_count}/{total_count} bins")
     
     for idx, name in enumerate(bin_names):
         obs = name.split("#")[0]
         if valid_bins is not None and name not in valid_bins:
-            if debug:
-                print(f"  Skipping bin {name} (not in valid envelope bins)")
             continue
         if obs not in obs_bins:
             obs_bins[obs] = []
@@ -437,7 +443,7 @@ def obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=False
 
         if weighted:
             if np.any(ws > 1):
-                raise ValueError("  Error: Bin weights > 1 encountered in weighted mode.")
+                raise ValueError("  Error: Bin weights > 1 encountered in weighted mode")
             valid_mask = errs != 0
             chi2_series = (ws[valid_mask]**2) * (diffs[valid_mask]**2) / errs[valid_mask]
             ndf_series = ws[valid_mask]**2
@@ -492,7 +498,7 @@ def global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=Fa
 
     if weighted:
         if np.any(bin_weights > 1):
-            raise ValueError("  Error: Bin weights > 1 encountered in weighted mode.")
+            raise ValueError("  Error: Bin weights > 1 encountered in weighted mode")
         valid_mask = squared_errors != 0
         chi2_series = (bin_weights[valid_mask]**2) * (differences[valid_mask]**2) / squared_errors[valid_mask]
         ndf_series = bin_weights[valid_mask]**2
@@ -801,15 +807,15 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Compute global chi2 from YODA file and weights.")
-    parser.add_argument("weights_file", help="Path to the weights file")
     parser.add_argument("yoda_files", nargs="+", help="Path(s) to one or more YODA files or a directory")
+    parser.add_argument("-w",  "--weights",         default=None, help="Path to the weights file (optional, if not provided, all weights default to 1.0)")
+    parser.add_argument(       "--weighted",        action="store_true", default=False, help="Enable weighted chi2 calculation")
     parser.add_argument("-l",  "--labels",          nargs="+", help="Labels for each YODA file (same order)")
-    parser.add_argument("-w",  "--weighted",        action="store_true", default=False, help="Enable weighted chi2 calculation")
     parser.add_argument("-p",  "--plots",           action="store_true", default=False, help="Enable plotting of chi2 per analysis")
     parser.add_argument("-d",  "--default",         default=None, help="Path to a YODA file for comparison of chi2 (default: None)")
     parser.add_argument("-dl", "--default_label",   default="default", help="Label for the default YODA file in output and plots")
     parser.add_argument("-e",  "--envelope",        nargs=2, metavar=("up.yoda", "dn.yoda"), help="Check if reference values are within envelope (up.yoda dn.yoda)")
-    parser.add_argument("-t",  "--tag",             default=None, help="If set, only use YODA files with this tag from the given directory")
+    parser.add_argument("-t",  "--tags",            nargs="+", default=None, help="If set, only use YODA files with any of these tags from the given directory")
     parser.add_argument("-o",  "--outdir",          default=None, help="Output directory for chi2 plots")
     parser.add_argument("-v",  "--debug",           action="store_true", default=False, help="Enable debug output")
     args = parser.parse_args()
@@ -818,7 +824,17 @@ def main():
 
     try:
         loader = yodaLoader()
-        weights = read_weights(args.weights_file)
+        if args.weights is not None:
+            weights = read_weights(args.weights)
+            if args.debug:
+                print(f"Loaded weights from {args.weights}")
+        else:
+            weights = None
+            if args.debug:
+                print("No weights file provided, using default weight of 1.0 for all observables/bins")
+            if args.weighted:
+                print("Warning: Weighted chi2 calculation is enabled, but no weights file is provided")
+                args.weighted = False
     except FileNotFoundError as e:
         print(f"Error: Weights file not found: {e}")
         return 1
@@ -828,7 +844,7 @@ def main():
 
     if args.default:
         if not Path(args.default).exists():
-            print(f"\nWarning: YODA file (default) {args.default} does not exist.")
+            print(f"Warning: YODA file (default) {args.default} does not exist")
             args.default = None
     
     if args.outdir is None:
@@ -892,8 +908,8 @@ def process_directory(args, loader, weights, valid_bins=None):
     ndf_dict = {}
 
     yoda_files = list(yoda_path.glob("*.yoda")) + list(yoda_path.glob("*.yoda.gz"))
-    if args.tag:
-        yoda_files = [f for f in yoda_files if args.tag in f.name]
+    if args.tags:
+        yoda_files = [f for f in yoda_files if any(tag in f.name for tag in args.tags)]
     for yfile in yoda_files:
         differences, squared_errors, bin_weights, bin_names = loader.get_bin_differences(
             str(yfile), weights, include_ref_error=True, debug=args.debug)
@@ -909,8 +925,8 @@ def process_directory(args, loader, weights, valid_bins=None):
     for subfolder in yoda_path.iterdir():
         if subfolder.is_dir():
             yoda_files = list(subfolder.glob("*.yoda")) + list(subfolder.glob("*.yoda.gz"))
-            if args.tag:
-                yoda_files = [f for f in yoda_files if args.tag in f.name]
+            if args.tags:
+                yoda_files = [f for f in yoda_files if any(tag in f.name for tag in args.tags)]
             if not yoda_files:
                 continue
             for yfile in yoda_files:
@@ -927,7 +943,7 @@ def process_directory(args, loader, weights, valid_bins=None):
 
     reduced_chi2_dict = {key: reduced_chi2_dict[key] for key in sorted(reduced_chi2_dict.keys())}
 
-    print("\n" + "Input directory: " + str(yoda_path.resolve()))
+    print("\nInput directory: " + str(yoda_path.resolve()))
     print(("Weighted" if args.weighted else "Unweighted") + " chi2 summary:\n")
 
     table = []
@@ -966,6 +982,8 @@ def process_files(args, loader, weights, valid_bins=None):
     if args.labels and len(args.labels) == len(args.yoda_files):
         labels = args.labels
     else:
+        if args.labels:
+            print(f"Warning: Number of labels ({len(args.labels)}) does not match number of YODA files ({len(args.yoda_files)}), using file stems as labels")
         labels = [Path(yoda_file).stem for yoda_file in args.yoda_files]
 
     all_valid_chi2s = []
@@ -975,10 +993,10 @@ def process_files(args, loader, weights, valid_bins=None):
     for idx, yoda_file in enumerate(args.yoda_files):
         yoda_path = Path(yoda_file)
         if yoda_path.is_dir():
-            print(f"\nWarning: {yoda_file} is a directory, please provide a specific YODA file. Skipping.")
+            print(f"Warning: {yoda_file} is a directory, please provide a specific YODA file, skipping...")
             continue
         if not yoda_path.exists():
-            print(f"\nWarning: YODA file {yoda_file} does not exist. Skipping.")
+            print(f"Warning: YODA file {yoda_file} does not exist, skipping...")
             continue
         
         label = labels[idx]
@@ -1062,7 +1080,7 @@ def process_files(args, loader, weights, valid_bins=None):
 
     if args.plots:
         if not all_chi2_plots:
-            print("\nNo valid YODA files found. Skipping plot and HTML creation.")
+            print("No valid YODA files found. Skipping plot and HTML creation")
         else:
             print("\nCreating plots...")
             plot_chi2_per_analysis(all_chi2_plots, labels, chi2_plot_def=chi2_plot_def, default_label=args.default_label, outdir=args.outdir)
