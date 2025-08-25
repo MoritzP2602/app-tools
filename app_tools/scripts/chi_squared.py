@@ -33,6 +33,23 @@ def read_weights(wfile):
     return weights
 
 
+def read_analyses(afile):
+    """
+    Read list of analyses from a file.
+
+    :param afile: Path to the analyses file. Each line should contain one analysis name.
+    :return: Set of analysis names to include.
+    """
+    analyses = set()
+    with open(afile, "r") as f:
+        lines = f.readlines()
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#"):
+            analyses.add(line)
+    return analyses
+
+
 class yodaLoader:
     paths = rivet.getAnalysisRefPaths()
     yodas = {}
@@ -170,15 +187,16 @@ class yodaLoader:
             y_err = [0.0]
         return bin_names, y_values, y_err
 
-    def get_bin_differences(self, yoda_file, weights=None, include_ref_error=True, debug=False):
+    def get_bin_differences(self, yoda_file, weights=None, analyses=None, include_ref_error=True, debug=False):
         """
         Compute differences between data and reference YODA files.
 
         :param yoda_file: Path to the YODA file containing data.
         :param weights: Optional weights for the observables.
+        :param analyses: Optional set of analysis names to include (if None, all analyses are included).
         :param include_ref_error: Whether to include reference errors in the computation.
         :param debug: Whether to print debug information.
-        :return: Tuple of differences, squared errors, bin weights, and bin names.
+        :return: Tuple of differences, squared errors, bin weights, bin names, and analyses.
         """
         if debug:
             print(f"Executing get_bin_differences for {yoda_file}")
@@ -188,6 +206,7 @@ class yodaLoader:
         squared_errors = []
         bin_names = []
         bin_weights = []
+        analyses_found = set()
         yoda_version = tuple(map(int, yoda.__version__.split(".")))
 
         for obs in yd:
@@ -200,6 +219,11 @@ class yodaLoader:
             except (IndexError, AttributeError):
                 if debug:
                     print(f"  Failed to parse analysis name from {obs}")
+                continue
+            
+            if analyses is not None and analysis_name not in analyses:
+                if debug:
+                    print(f"  Skipping observable {obs} (analysis {analysis_name} not in analyses list)")
                 continue
             
             obs_weight = 1.0
@@ -275,8 +299,9 @@ class yodaLoader:
                 squared_errors.append(err ** 2)
                 bin_names.append(bin_name)
                 bin_weights.append(bin_weight)
+            analyses_found.add(analysis_name)
         
-        return np.array(differences), np.array(squared_errors), np.array(bin_weights), bin_names
+        return np.array(differences), np.array(squared_errors), np.array(bin_weights), bin_names, tuple(sorted(analyses_found))
     
     def get_valid_bins(self, up_file, dn_file, weights=None, debug=False):
         """
@@ -521,21 +546,131 @@ def global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=Fa
     return chi2, ndf
 
 
+def group_yoda_files_by_analyses(file_analyses, debug=False):
+    """
+    Group YODA files based on their list of analyses.
+    
+    :param file_analyses: Dictionary mapping YODA file paths to analysis signatures
+    :param debug: If True, print debug info
+    :return: Dictionary mapping analysis signatures to lists of YODA files
+    """
+    if debug:
+        print("Grouping YODA files by analyses...")
+    
+    groups = {}
+    for yoda_file, signature in file_analyses.items():
+        if not signature:
+            continue
+        if signature not in groups:
+            groups[signature] = []
+        groups[signature].append(yoda_file)
+    
+    if debug:
+        print(f"Found {len(groups)} groups:")
+        for i, (signature, files) in enumerate(groups.items()):
+            print(f"  Group {i+1}: {len(signature)} analyses ({len(files)} files)")
+            print(f"    Analyses: {', '.join(signature)}")
+            print(f"    Files: {[f.name for f in files]}")
+    
+    return groups
+
+
+def group_yoda_files_by_name(yoda_files, debug=False):
+    """
+    Group YODA files based on their filename suffix (after last '-').
+    
+    :param yoda_files: List of YODA file paths
+    :param debug: If True, print debug info
+    :return: Dictionary mapping name suffixes to lists of YODA files
+    """
+    if debug:
+        print("Grouping YODA files by filename suffix...")
+    
+    groups = {}
+    for yoda_file in yoda_files:
+        name = yoda_file.stem
+        if name.endswith('.yoda'):
+            name = name[:-5]
+        if name.endswith('.yoda.gz'):
+            name = name[:-8]
+        
+        if '-' in name:
+            suffix = name.split('-')[-1]
+        else:
+            suffix = name
+        
+        if suffix not in groups:
+            groups[suffix] = []
+        groups[suffix].append(yoda_file)
+    
+    if debug:
+        print(f"Found {len(groups)} groups:")
+        for i, (suffix, files) in enumerate(groups.items()):
+            print(f"  Group {i+1}: {suffix} ({len(files)} files)")
+            print(f"    Files: {[f.name for f in files]}")
+    
+    return groups
+
+
+def find_matching_default_file(group_signature, group_name, default_file_analyses, group_by_name=False, debug=False):
+    """
+    Find a matching default file for a group.
+    
+    :param group_signature: Group signature (tuple of analyses or filename suffix)
+    :param group_name: Group name
+    :param default_file_analyses: Dictionary mapping default files to their analyses
+    :param group_by_name: Whether grouping is by name
+    :param debug: Debug flag
+    :return: Path to matching default file or None
+    """
+    if debug:
+        print(f"Looking for default file matching group: {group_name}")
+    
+    if group_by_name:
+        for dfile in default_file_analyses.keys():
+            name = dfile.stem
+            if name.endswith('.yoda'):
+                name = name[:-5]
+            if name.endswith('.yoda.gz'):
+                name = name[:-8]
+            
+            if '-' in name:
+                suffix = name.split('-')[-1]
+            else:
+                suffix = name
+            
+            if suffix == group_signature:
+                if debug:
+                    print(f"  Found matching default file by name: {dfile.name}")
+                return dfile
+    else:
+        for dfile, analyses in default_file_analyses.items():
+            if analyses == group_signature:
+                if debug:
+                    print(f"  Found matching default file by analyses: {dfile.name}")
+                return dfile
+    
+    if debug:
+        print(f"  No matching default file found for group: {group_name}")
+    return None
+
+
 def plot_chi2_per_analysis(all_chi2_plots, labels, chi2_plot_def=None, default_label="default", outdir="chi2_plots"):
     """
     Plot chi2 per analysis for multiple tunes, optionally comparing to default.
     """
     os.makedirs(outdir, exist_ok=True)
-    reds = plt.get_cmap('Reds')
-    colors = [reds(0.4 + 0.5 * i / max(1, len(labels)-1)) for i in range(len(labels))]
+    rainbow = plt.get_cmap('rainbow')
+    colors = [rainbow(i / max(1, len(labels)-1)) for i in range(len(labels))]
 
-    all_analysis = set()
+    all_analyses = set()
     for chi2_plot in all_chi2_plots:
-        all_analysis.update(chi2_plot.keys())
+        all_analyses.update(chi2_plot.keys())
     if chi2_plot_def:
-        all_analysis.update(chi2_plot_def.keys())
+        all_analyses.update(chi2_plot_def.keys())
 
-    for analysis_name in sorted(all_analysis):
+    for analysis_name in sorted(all_analyses):
+        tune_bin_data = []
         tune_bin_ids = []
         tune_chi2s = []
         for chi2_plot in all_chi2_plots:
@@ -543,12 +678,23 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, chi2_plot_def=None, default_l
                 bin_ids, chi2_values = zip(*chi2_plot[analysis_name])
                 tune_bin_ids.append(bin_ids)
                 tune_chi2s.append(chi2_values)
+                tune_bin_data.append(dict(zip(bin_ids, chi2_values)))
             else:
                 tune_bin_ids.append(())
                 tune_chi2s.append(())
+                tune_bin_data.append({})
 
-        ref_idx = next((i for i, b in enumerate(tune_bin_ids) if b), 0)
-        bin_ids = tune_bin_ids[ref_idx] if tune_bin_ids[ref_idx] else []
+        all_bin_ids = set()
+        for bin_ids in tune_bin_ids:
+            all_bin_ids.update(bin_ids)
+        
+        ref_idx = max(range(len(tune_bin_ids)), key=lambda i: len(tune_bin_ids[i])) if any(tune_bin_ids) else 0
+        ref_bin_ids = tune_bin_ids[ref_idx] if tune_bin_ids[ref_idx] else []
+        
+        bin_ids = list(ref_bin_ids)
+        for bid in sorted(all_bin_ids - set(ref_bin_ids)):
+            bin_ids.append(bid)
+        
         n_bins = len(bin_ids)
 
         chi2_values_def = None
@@ -566,16 +712,25 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, chi2_plot_def=None, default_l
             fig, (ax_top, ax_bottom) = plt.subplots(
                 2, 1, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(8, 6))
 
-            for i, (chi2s, label) in enumerate(zip(tune_chi2s, labels)):
-                if not chi2s:
+            for i, (bin_data, label) in enumerate(zip(tune_bin_data, labels)):
+                if not bin_data:
                     continue
-                chunk_chi2s = chi2s[start:end]
-                ax_top.plot(chunk_bin_ids, chunk_chi2s, marker='o', markersize=4, linestyle='', label=label, color=colors[i])
-                ax_top.plot(chunk_bin_ids, chunk_chi2s, linestyle='-', alpha=0.5, color=colors[i])
+                chunk_chi2s = [bin_data.get(bid, np.nan) for bid in chunk_bin_ids]
+                
+                valid_indices = [j for j, val in enumerate(chunk_chi2s) if not np.isnan(val)]
+                if not valid_indices:
+                    continue
+                    
+                valid_bin_ids = [chunk_bin_ids[j] for j in valid_indices]
+                valid_chi2s = [chunk_chi2s[j] for j in valid_indices]
+                
+                ax_top.plot(valid_bin_ids, valid_chi2s, marker='o', markersize=4, linestyle='', label=label, color=colors[i])
+                if len(valid_chi2s) > 1:
+                    ax_top.plot(valid_bin_ids, valid_chi2s, linestyle='-', alpha=0.5, color=colors[i])
             if chi2_values_def is not None:
                 chunk_chi2_values_def = chi2_values_def[start:end]
-                ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', markersize=4, color='cornflowerblue', linestyle='', label=default_label)
-                ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color='cornflowerblue', alpha=0.5)
+                ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', markersize=4, color='black', linestyle='', label=default_label)
+                ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color='black', alpha=0.5)
             ax_top.set_ylabel(r'$\chi^2 / \mathrm{ndf}$')
             if n_chunks == 1:
                 ax_top.set_title(f'{analysis_name}')
@@ -586,14 +741,22 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, chi2_plot_def=None, default_l
             ax_top.tick_params(axis='x', which='both', bottom=True, top=False, length=3.5, direction='in', labelbottom=False)
 
             if chi2_values_def is not None:
-                for i, (chi2s, label) in enumerate(zip(tune_chi2s, labels)):
-                    if not chi2s:
+                for i, (bin_data, label) in enumerate(zip(tune_bin_data, labels)):
+                    if not bin_data:
                         continue
-                    chunk_chi2s = np.array(chi2s[start:end])
+                    chunk_chi2s = np.array([bin_data.get(bid, np.nan) for bid in chunk_bin_ids])
                     chunk_chi2_values_def = np.array(chi2_values_def[start:end])
-                    ratio = chunk_chi2s / chunk_chi2_values_def
-                    ax_bottom.plot(chunk_bin_ids, ratio, marker='o', markersize=4, linestyle='', label=f"{label}/{default_label}", color=colors[i])
-                    ax_bottom.plot(chunk_bin_ids, ratio, linestyle='-', alpha=0.5, color=colors[i])
+                    
+                    valid_mask = ~(np.isnan(chunk_chi2s) | np.isnan(chunk_chi2_values_def))
+                    if not np.any(valid_mask):
+                        continue
+                        
+                    valid_bin_ids = [chunk_bin_ids[j] for j in range(len(chunk_bin_ids)) if valid_mask[j]]
+                    valid_ratios = (chunk_chi2s / chunk_chi2_values_def)[valid_mask]
+                    
+                    ax_bottom.plot(valid_bin_ids, valid_ratios, marker='o', markersize=4, linestyle='', label=f"{label}/{default_label}", color=colors[i])
+                    if len(valid_ratios) > 1:
+                        ax_bottom.plot(valid_bin_ids, valid_ratios, linestyle='-', alpha=0.5, color=colors[i])
                 ax_bottom.axhline(1, color='black', linestyle='--', alpha=0.2)
                 ax_bottom.set_ylabel(f'tune/{default_label}')
                 ax_bottom.set_xlabel('observable')
@@ -642,33 +805,64 @@ def plot_chi2_distribution(all_valid_chi2s, labels, valid_chi2s_def=None, defaul
     Plot the distribution of chi2 values (log10) for multiple YODA files.
     """
     os.makedirs(outdir, exist_ok=True)
+    
+    filtered_chi2s = []
+    filtered_labels = []
     all_logs = []
-    for chi2s in all_valid_chi2s:
-        all_logs.extend(np.log10(chi2s))
-    if valid_chi2s_def is not None:
-        all_logs.extend(np.log10(valid_chi2s_def))
+    
+    for chi2s, label in zip(all_valid_chi2s, labels):
+        if len(chi2s) > 0:
+            valid_chi2s = [x for x in chi2s if x > 0 and np.isfinite(x)]
+            if len(valid_chi2s) > 0:
+                filtered_chi2s.append(valid_chi2s)
+                filtered_labels.append(label)
+                all_logs.extend(np.log10(valid_chi2s))
+            else:
+                print(f"Warning: No valid chi2 values for {label}, skipping from distribution plot")
+        else:
+            print(f"Warning: Empty chi2 array for {label}, skipping from distribution plot")
+    
+    valid_chi2s_def_filtered = None
+    if valid_chi2s_def is not None and len(valid_chi2s_def) > 0:
+        valid_def = [x for x in valid_chi2s_def if x > 0 and np.isfinite(x)]
+        if len(valid_def) > 0:
+            valid_chi2s_def_filtered = valid_def
+            all_logs.extend(np.log10(valid_def))
+        else:
+            print(f"Warning: No valid chi2 values for default data, skipping from distribution plot")
+    
+    if len(all_logs) == 0:
+        print("Warning: No valid chi2 data found for distribution plot")
+        return
+    
     bins = np.linspace(np.min(all_logs), np.max(all_logs), 51)
 
     all_hists = []
-    for chi2s in all_valid_chi2s:
+    for chi2s in filtered_chi2s:
         hist, _ = np.histogram(np.log10(chi2s), bins=bins, density=True)
         all_hists.append(hist)
-    if valid_chi2s_def is not None:
-        hist_def, _ = np.histogram(np.log10(valid_chi2s_def), bins=bins, density=True)
+    if valid_chi2s_def_filtered is not None:
+        hist_def, _ = np.histogram(np.log10(valid_chi2s_def_filtered), bins=bins, density=True)
         all_hists.append(hist_def)
-    global_ylim = (0, max([np.max(h) for h in all_hists]) * 1.08)
+    
+    max_hist_val = max([np.max(h) for h in all_hists if len(h) > 0]) if all_hists else 1.0
+    global_ylim = (0, max_hist_val * 1.08)
 
-    n_plots = len(all_valid_chi2s) + (1 if valid_chi2s_def is not None else 0)
+    n_plots = len(filtered_chi2s) + (1 if valid_chi2s_def_filtered is not None else 0)
+    if n_plots == 0:
+        print("Warning: No plots to generate for chi2 distribution")
+        return
+        
     fig, axes = plt.subplots(n_plots, 1, figsize=(8, max(5, 2 * n_plots)), sharex=True, gridspec_kw={'hspace': 0})
 
     if n_plots == 1:
         axes = [axes]
 
-    reds = plt.get_cmap('Reds')
-    colors = [reds(0.4 + 0.5 * i / max(1, len(all_valid_chi2s)-1)) for i in range(len(all_valid_chi2s))]
+    rainbow = plt.get_cmap('rainbow')
+    colors = [rainbow(i / max(1, len(filtered_chi2s)-1)) for i in range(len(filtered_chi2s))]
 
     plot_idx = 0
-    for chi2s, label, color in zip(all_valid_chi2s, labels, colors):
+    for chi2s, label, color in zip(filtered_chi2s, filtered_labels, colors):
         hist, bin_edges = np.histogram(np.log10(chi2s), bins=bins, density=True)
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         ax = axes[plot_idx]
@@ -680,12 +874,12 @@ def plot_chi2_distribution(all_valid_chi2s, labels, valid_chi2s_def=None, defaul
         ax.yaxis.set_major_locator(plt.MaxNLocator(nbins=4, prune='both'))
         plot_idx += 1
 
-    if valid_chi2s_def is not None:
-        hist_def, bin_edges_def = np.histogram(np.log10(valid_chi2s_def), bins=bins, density=True)
+    if valid_chi2s_def_filtered is not None:
+        hist_def, bin_edges_def = np.histogram(np.log10(valid_chi2s_def_filtered), bins=bins, density=True)
         bin_centers_def = 0.5 * (bin_edges_def[:-1] + bin_edges_def[1:])
         ax = axes[plot_idx]
-        ax.bar(bin_centers_def, hist_def, width=(bin_edges_def[1]-bin_edges_def[0]), alpha=0.2, color='cornflowerblue', label=None)
-        ax.step(bin_edges_def, np.append(hist_def, hist_def[-1]), where='post', color='cornflowerblue', linewidth=1, alpha=0.7, label=default_label)
+        ax.bar(bin_centers_def, hist_def, width=(bin_edges_def[1]-bin_edges_def[0]), alpha=0.2, color='black', label=None)
+        ax.step(bin_edges_def, np.append(hist_def, hist_def[-1]), where='post', color='black', linewidth=1, alpha=0.7, label=default_label)
         ax.set_ylabel('Density')
         ax.set_ylim(global_ylim)
         ax.legend(loc='upper right')
@@ -698,6 +892,112 @@ def plot_chi2_distribution(all_valid_chi2s, labels, valid_chi2s_def=None, defaul
         plt.savefig(fname.replace('.pdf', '.png'), dpi=150)
     plt.close(fig)
     print(f"Plot of Chi2 distribution saved to {outdir}/chi2_distribution.pdf/png")
+
+
+def create_master_index_html(outdir="chi2_plots", groups=None, default_label=None, group_by_name=False):
+    """
+    Create a master index.html file that links to all group-specific plot directories.
+    
+    :param outdir: Output directory containing group subdirectories
+    :param groups: Dictionary mapping analysis signatures to YODA file lists
+    :param default_label: Label for default comparison if used
+    """
+    now = datetime.datetime.now().strftime("%A, %d. %B %Y %H:%M")
+    
+    html = f"""<html>
+    <head>
+        <title>Chi2 Analysis Groups - Master Index</title>
+        <style>
+        html {{ font-family: sans-serif; }}
+        img {{ border: 0; max-width: 600px; }}
+        a {{ text-decoration: none; font-weight: bold; }}
+        table {{ border-collapse: collapse; margin-bottom: 2em; }}
+        td, th {{ border: 1px solid #ccc; padding: 8px 12px; }}
+        th {{ background: #eee; }}
+        .group-summary {{ margin: 1em 0; padding: 1em; border: 1px solid #ddd; background: #f9f9f9; }}
+        </style>
+        <script type="text/x-mathjax-config">
+        MathJax.Hub.Config({{
+            tex2jax: {{inlineMath: [["$","$"]]}}
+        }});
+        </script>
+        <script type="text/javascript" async
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+        </script>
+    </head>
+    <body>
+        <h1>Chi2 Analysis Groups</h1>
+        <p><a href="../index.html" style="display: inline-block; padding: 8px 16px; text-decoration: none; ">&laquo; Back to ../index.html</a></p>
+        <p>Generated from directory-based YODA analysis with automatic grouping.</p>
+    """
+    
+    if groups:
+        html += f"<h2>Analysis Groups ({len(groups)} groups found)</h2>\n"
+        if group_by_name:
+            html += "<p>Files have been automatically grouped by their filename suffix (after last '-'). Each group contains YODA files with the same naming pattern.</p>\n"
+        else:
+            html += "<p>Files have been automatically grouped by their analysis content. Each group contains YODA files with the same set of analyses.</p>\n"
+        
+        for group_idx, (signature, files) in enumerate(groups.items()):
+            if group_by_name:
+                group_name = signature
+            else:
+                endings = set()
+                for yfile in files:
+                    name = yfile.stem
+                    if name.endswith('.yoda'):
+                        name = name[:-5]
+                    if name.endswith('.yoda.gz'):
+                        name = name[:-8]
+                    if '-' in name:
+                        ending = name.split('-')[-1]
+                        endings.add(ending)
+                if len(endings) > 1:
+                    group_name = f"group_{group_idx+1}"
+                else:
+                    group_name = list(endings)[0] if endings else f"group_{group_idx+1}"
+            
+            group_dir = os.path.join(outdir, group_name)
+            
+            html += f'<div class="group-summary">\n'
+            if group_by_name:
+                html += f'<h3><a href="{group_name}/index.html">{group_name}</a></h3>\n'
+                html += f'<p><strong>Filename suffix:</strong> {signature}</p>\n'
+            else:
+                if len(endings) > 1:
+                    html += f'<h3><a href="{group_name}/index.html">Group {group_idx+1}</a></h3>\n'
+                else:
+                    html += f'<h3><a href="{group_name}/index.html">Group {group_idx+1} ({group_name})</a></h3>\n'
+                html += f'<p><strong>Analyses ({len(signature)}):</strong> {", ".join(sorted(signature))}</p>\n'
+            
+            html += f'<p><strong>Files ({len(files)}):</strong> {", ".join([f.name for f in files])}</p>\n'
+            
+            if os.path.exists(group_dir) and os.path.exists(os.path.join(group_dir, "index.html")):
+                html += f'<p><a href="{group_name}/index.html">&raquo; View plots and analysis for this group</a></p>\n'
+            else:
+                html += f'<p><em>Plots not generated for this group</em></p>\n'
+            
+            html += '</div>\n'
+    else:
+        html += "<p>No analysis groups found.</p>\n"
+    
+    if default_label:
+        html += f'<p><strong>Default comparison:</strong> {default_label}</p>\n'
+    
+    html += f"""
+        <p><a href="../index.html" style="display: inline-block; padding: 8px 16px; text-decoration: none; ">&laquo; Back to ../index.html</a></p>
+        <footer style="clear:both; margin-top:3em; padding-top:3em">
+            <p>Generated at {now}</p>
+            <p>Created with command: <pre>{" ".join(os.sys.argv)}</pre></p>
+        </footer>
+    </body>
+    </html>
+    """
+    
+    master_index_path = os.path.join(outdir, "index.html")
+    with open(master_index_path, "w") as f:
+        f.write(html)
+    print(f"Created master index at {master_index_path}")
 
 
 def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
@@ -726,7 +1026,7 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
     now = datetime.datetime.now().strftime("%A, %d. %B %Y %H:%M")
     html = f"""<html>
     <head>
-        <title>Plots from chi_squared.py</title>
+        <title>Chi2 Plots</title>
         <style>
         html {{ font-family: sans-serif; }}
         img {{ border: 0; max-width: 600px; }}
@@ -745,7 +1045,8 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
         </script>
     </head>
     <body>
-        <h2>Plots from chi_squared.py</h2>
+        <h2>Chi2 Plots</h2>
+        <p><a href="../index.html" style="display: inline-block; padding: 8px 16px; text-decoration: none; ">&laquo; Back to ../index.html</a></p>
     """
 
     if summaries:
@@ -792,6 +1093,7 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
         html += '</div>\n'
 
     html += f"""    <footer style="clear:both; margin-top:3em; padding-top:3em">
+        <p><a href="../index.html" style="display: inline-block; padding: 8px 16px; text-decoration: none; ">&laquo; Back to ../index.html</a></p>
         <p>Generated at {now}</p>
         <p>Created with command: <pre>{" ".join(os.sys.argv)}</pre></p>
         </footer>
@@ -807,16 +1109,19 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
 def main():
     parser = argparse.ArgumentParser(description="Compute global chi2 from YODA file and weights.")
     parser.add_argument("yoda_files", nargs="+", help="Path(s) to one or more YODA files or a directory")
-    parser.add_argument("-w",  "--weights",         default=None, help="Path to the weights file (optional, if not provided, all weights default to 1.0)")
-    parser.add_argument(       "--weighted",        action="store_true", default=False, help="Enable weighted chi2 calculation")
-    parser.add_argument("-l",  "--labels",          nargs="+", help="Labels for each YODA file (same order)")
-    parser.add_argument("-p",  "--plots",           action="store_true", default=False, help="Enable plotting of chi2 per analysis")
-    parser.add_argument("-d",  "--default",         default=None, help="Path to a YODA file for comparison of chi2 (default: None)")
-    parser.add_argument("-dl", "--default_label",   default="default", help="Label for the default YODA file in output and plots")
-    parser.add_argument("-e",  "--envelope",        nargs=2, metavar=("up.yoda", "dn.yoda"), help="Check if reference values are within envelope (up.yoda dn.yoda)")
-    parser.add_argument("-t",  "--tags",            nargs="+", default=None, help="If set, only use YODA files with any of these tags from the given directory")
-    parser.add_argument("-o",  "--outdir",          default=None, help="Output directory for chi2 plots")
-    parser.add_argument("-v",  "--debug",           action="store_true", default=False, help="Enable debug output")
+    parser.add_argument("-w",  "--weights",             default=None, help="Path to the weights file (optional, if not provided, all weights default to 1.0)")
+    parser.add_argument("-a",  "--analyses",            default=None, help="Path to file containing list of analyses to include (optional, if not provided, all analyses are included)")
+    parser.add_argument(       "--weighted",            action="store_true", default=False, help="Enable weighted chi2 calculation")
+    parser.add_argument("-l",  "--labels",              nargs="+", help="Labels for each YODA file (same order)")
+    parser.add_argument("-p",  "--plots",               action="store_true", default=False, help="Enable plotting of chi2 per analysis")
+    parser.add_argument("-d",  "--default",             default=None, help="Path to a YODA file, directory, or tag for comparison of chi2. For directories/tags, matching files are automatically selected per group.")
+    parser.add_argument("-dl", "--default_label",       default="default", help="Label for the default YODA file in output and plots")
+    parser.add_argument("-e",  "--envelope",            nargs=2, metavar=("up.yoda", "dn.yoda"), help="Check if reference values are within envelope (up.yoda dn.yoda)")
+    parser.add_argument("-t",  "--tags",                nargs="+", default=None, help="If set, only use YODA files with any of these tags from the given directory")
+    parser.add_argument(       "--subdir",              action="store_true", default=False, help="If set, also process all subdirectories in the given directory")
+    parser.add_argument("-o",  "--outdir",              default="chi2_plots", help="Output directory for chi2 plots")
+    parser.add_argument(       "--group_by_analyses",   action="store_true", default=False, help="Group files by analyses instead of by filename suffix (after last '-')")
+    parser.add_argument("-v",  "--debug",               action="store_true", default=False, help="Enable debug output")
     args = parser.parse_args()
 
     print("Starting chi2 analysis...")
@@ -834,21 +1139,27 @@ def main():
             if args.weighted:
                 print("Warning: Weighted chi2 calculation is enabled, but no weights file is provided")
                 args.weighted = False
+                
+        if args.analyses is not None:
+            analyses = read_analyses(args.analyses)
+            if args.debug:
+                print(f"Loaded analyses from {args.analyses}: {sorted(analyses)}")
+        else:
+            analyses = None
+            if args.debug:
+                print("No analyses file provided, using all available analyses")
     except FileNotFoundError as e:
-        print(f"Error: Weights file not found: {e}")
+        print(f"Error: File not found: {e}")
         return 1
     except Exception as e:
-        print(f"Error reading weights file: {e}")
+        print(f"Error reading files: {e}")
         return 1
 
     if args.default:
-        if not Path(args.default).exists():
-            print(f"Warning: YODA file (default) {args.default} does not exist")
+        default_path = Path(args.default)
+        if ('/' in args.default or '\\' in args.default) and not default_path.exists():
+            print(f"Warning: Default path {args.default} does not exist")
             args.default = None
-    
-    if args.outdir is None:
-        parent_folder = Path.cwd().name
-        args.outdir = f"{parent_folder}.chi2"
 
     valid_bins = None
     if args.envelope:
@@ -865,9 +1176,9 @@ def main():
 
     try:
         if len(args.yoda_files) == 1 and Path(args.yoda_files[0]).is_dir():
-            return process_directory(args, loader, weights, valid_bins)
+            return process_directory(args, loader, weights, analyses, valid_bins, group_by_name=not args.group_by_analyses)
         else:
-            return process_files(args, loader, weights, valid_bins)
+            return process_files(args, loader, weights, analyses, valid_bins)
     except Exception as e:
         print(f"Error processing files: {e}")
         if args.debug:
@@ -897,9 +1208,78 @@ def process_envelope(args, loader, weights):
             import traceback
             traceback.print_exc()
         return None
+    
+
+def process_default_files(default_arg, loader, weights, analyses, valid_bins=None, debug=False):
+    """
+    Process default files from a path, directory, or tag.
+    
+    :param default_arg: Path to file, directory, or tag string
+    :param loader: yodaLoader instance
+    :param weights: Weights dictionary
+    :param analyses: Analyses set to filter by
+    :param valid_bins: Valid bins list
+    :param debug: Debug flag
+    :return: Dictionary with default file information
+    """
+    if debug:
+        print(f"Processing default files from: {default_arg}")
+    
+    default_path = Path(default_arg)
+    default_files = []
+    
+    if default_path.is_file():
+        default_files = [default_path]
+        if debug:
+            print(f"  Using single default file: {default_path}")
+    
+    elif default_path.is_dir():
+        default_files = list(default_path.glob("*.yoda")) + list(default_path.glob("*.yoda.gz"))
+        if debug:
+            print(f"  Found {len(default_files)} default files in directory")
+    
+    else:
+        current_dir = Path(".")
+        all_yoda_files = list(current_dir.glob("*.yoda")) + list(current_dir.glob("*.yoda.gz"))
+        default_files = [f for f in all_yoda_files if default_arg in f.name]
+        if debug:
+            print(f"  Found {len(default_files)} default files matching tag '{default_arg}'")
+    
+    default_file_analyses = {}
+    default_file_results = {}
+    
+    for dfile in default_files:
+        try:
+            differences, squared_errors, bin_weights, bin_names, analyses_found = loader.get_bin_differences(
+                str(dfile), weights, analyses, include_ref_error=True, debug=debug)
+            chi2, ndf = global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=False, valid_bins=valid_bins, debug=debug)
+            obs_chi2s = obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=False, valid_bins=valid_bins, debug=debug)
+            valid_chi2s = [v for v in obs_chi2s.values() if v != -1]
+            
+            default_file_analyses[dfile] = analyses_found
+            default_file_results[dfile] = {
+                'chi2': chi2,
+                'ndf': ndf,
+                'obs_chi2s': obs_chi2s,
+                'valid_chi2s': valid_chi2s,
+                'differences': differences,
+                'squared_errors': squared_errors,
+                'bin_weights': bin_weights,
+                'bin_names': bin_names
+            }
+            
+            if debug:
+                print(f"  Processed default file: {dfile.name} ({len(analyses)} analyses)")
+                
+        except Exception as e:
+            if debug:
+                print(f"  Failed to process default file {dfile}: {e}")
+            continue
+    
+    return default_file_analyses, default_file_results
 
 
-def process_directory(args, loader, weights, valid_bins=None):
+def process_directory(args, loader, weights, analyses, valid_bins=None, group_by_name=True):
     """Process a directory containing YODA files."""
     yoda_path = Path(args.yoda_files[0])
     reduced_chi2_dict = {}
@@ -909,36 +1289,57 @@ def process_directory(args, loader, weights, valid_bins=None):
     yoda_files = list(yoda_path.glob("*.yoda")) + list(yoda_path.glob("*.yoda.gz"))
     if args.tags:
         yoda_files = [f for f in yoda_files if any(tag in f.name for tag in args.tags)]
+    
+    file_analyses = {}
+    file_results = {}
+    
     for yfile in yoda_files:
-        differences, squared_errors, bin_weights, bin_names = loader.get_bin_differences(
-            str(yfile), weights, include_ref_error=True, debug=args.debug)
+        differences, squared_errors, bin_weights, bin_names, analyses_found = loader.get_bin_differences(
+            str(yfile), weights, analyses, include_ref_error=True, debug=args.debug)
+        file_analyses[yfile] = analyses_found
         chi2, ndf = global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
         obs_chi2s = obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
         valid_chi2s = [v for v in obs_chi2s.values() if v != -1]
+
+        file_results[yfile] = {
+            'chi2': chi2,
+            'ndf': ndf,
+            'obs_chi2s': obs_chi2s,
+            'valid_chi2s': valid_chi2s
+        }
 
         key = yfile.stem
         reduced_chi2_dict[key] = chi2 / ndf if ndf > 0 else float('nan')
         avg_chi2_dict[key] = np.mean(valid_chi2s) if valid_chi2s else float('nan')
         ndf_dict[key] = ndf
 
-    for subfolder in yoda_path.iterdir():
-        if subfolder.is_dir():
-            yoda_files = list(subfolder.glob("*.yoda")) + list(subfolder.glob("*.yoda.gz"))
-            if args.tags:
-                yoda_files = [f for f in yoda_files if any(tag in f.name for tag in args.tags)]
-            if not yoda_files:
-                continue
-            for yfile in yoda_files:
-                differences, squared_errors, bin_weights, bin_names = loader.get_bin_differences(
-                    str(yfile), weights, include_ref_error=True, debug=args.debug)
-                chi2, ndf = global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
-                obs_chi2s = obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
-                valid_chi2s = [v for v in obs_chi2s.values() if v != -1]
+    if args.subdir:
+        for subfolder in yoda_path.iterdir():
+            if subfolder.is_dir():
+                yoda_files_sub = list(subfolder.glob("*.yoda")) + list(subfolder.glob("*.yoda.gz"))
+                if args.tags:
+                    yoda_files_sub = [f for f in yoda_files_sub if any(tag in f.name for tag in args.tags)]
+                if not yoda_files_sub:
+                    continue
+                for yfile in yoda_files_sub:
+                    differences, squared_errors, bin_weights, bin_names, analyses_found = loader.get_bin_differences(
+                        str(yfile), weights, analyses, include_ref_error=True, debug=args.debug)
+                    file_analyses[yfile] = analyses_found
+                    chi2, ndf = global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
+                    obs_chi2s = obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
+                    valid_chi2s = [v for v in obs_chi2s.values() if v != -1]
 
-                key = subfolder.name
-                reduced_chi2_dict[key] = chi2 / ndf if ndf > 0 else float('nan')
-                avg_chi2_dict[key] = np.mean(valid_chi2s) if valid_chi2s else float('nan')
-                ndf_dict[key] = ndf
+                    file_results[yfile] = {
+                        'chi2': chi2,
+                        'ndf': ndf,
+                        'obs_chi2s': obs_chi2s,
+                        'valid_chi2s': valid_chi2s
+                    }
+
+                    key = subfolder.name
+                    reduced_chi2_dict[key] = chi2 / ndf if ndf > 0 else float('nan')
+                    avg_chi2_dict[key] = np.mean(valid_chi2s) if valid_chi2s else float('nan')
+                    ndf_dict[key] = ndf
 
     reduced_chi2_dict = {key: reduced_chi2_dict[key] for key in sorted(reduced_chi2_dict.keys())}
 
@@ -962,21 +1363,183 @@ def process_directory(args, loader, weights, valid_bins=None):
         print(f"Min. reduced chi2: {reduced_chi2_dict[min_reduced_key]:.2f} (key: {min_reduced_key})")
         print(f"Min. averaged chi2: {avg_chi2_dict[min_avg_key]:.2f} (key: {min_avg_key})")
 
+    chi2_plot_def = None
+    valid_chi2s_def = None
+    default_file_analyses = {}
+    default_file_results = {}
+    
     if args.default:
-        differences_def, squared_errors_def, bin_weights_def, bin_names_def = loader.get_bin_differences(
-            args.default, weights, include_ref_error=True, debug=args.debug)
-        chi2_def, ndf_def = global_chi2(differences_def, squared_errors_def, bin_weights_def, bin_names_def, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
-        obs_chi2s_def = obs_chi2(differences_def, squared_errors_def, bin_weights_def, bin_names_def, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
-        valid_chi2s_def = [v for v in obs_chi2s_def.values() if v != -1]
+        try:
+            default_file_analyses, default_file_results = process_default_files(
+                args.default, loader, weights, analyses, valid_bins, debug=args.debug)
+            
+            if default_file_analyses:
+                print(f"\nProcessed {len(default_file_analyses)} default files for potential group matching.")
+            else:
+                print(f"\nWarning: No valid default files found from: {args.default}")
+                args.default = None
+        except Exception as e:
+            print(f"Error processing default files: {e}")
+            args.default = None
+
+    if args.plots:
         print()
-        print(f"Label: {args.default_label}")
-        print(f"  Degrees of freedom (ndf): {ndf_def:.0f}")
-        print(f"  Reduced chi2: {chi2_def / ndf_def if ndf_def > 0 else 'undefined (ndf = 0)'}")
-        print(f"  Averaged chi2s over all obs.: {np.mean(valid_chi2s_def) if valid_chi2s_def else 'undefined (no valid observables)'}")
+        if not file_analyses:
+            print("No YODA files found for plotting.")
+            return 0
+        
+        if group_by_name:
+            groups = group_yoda_files_by_name(list(file_analyses.keys()), debug=args.debug)
+        else:
+            groups = group_yoda_files_by_analyses(file_analyses, debug=args.debug)
+        
+        if not groups:
+            print("No valid YODA files found for grouping and plotting.")
+            return 0
+        
+        for group_idx, (signature, group_files) in enumerate(groups.items()):
+            if group_by_name:
+                group_name = signature
+            else:
+                endings = set()
+                for yfile in group_files:
+                    name = yfile.stem
+                    if name.endswith('.yoda'):
+                        name = name[:-5]
+                    if name.endswith('.yoda.gz'):
+                        name = name[:-8]
+                    if '-' in name:
+                        ending = name.split('-')[-1]
+                        endings.add(ending)
+                if len(endings) > 1:
+                    group_name = f"group_{group_idx+1}"
+                else:
+                    group_name = list(endings)[0] if endings else f"group_{group_idx+1}"
+            
+            group_labels = []
+            for yfile in group_files:
+                name = yfile.stem
+                if name.endswith('.yoda'):
+                    name = name[:-5]
+                if name.endswith('.yoda.gz'):
+                    name = name[:-8]
+                
+                if group_by_name:
+                    parts = name.split('-')
+                    if len(parts) >= 2:
+                        label = parts[-2]
+                    else:
+                        label = name
+                else:
+                    parts = name.split('-')
+                    if len(parts) >= 2:
+                        endings = set()
+                        for f in group_files:
+                            fname = f.stem
+                            if fname.endswith('.yoda'):
+                                fname = fname[:-5]
+                            if fname.endswith('.yoda.gz'):
+                                fname = fname[:-8]
+                            if '-' in fname:
+                                endings.add(fname.split('-')[-1])
+                        
+                        if len(endings) > 1:
+                            label = parts[-2] + "-" + parts[-1]
+                        else:
+                            label = parts[-2]
+                    else:
+                        label = name
+                group_labels.append(label)
+            
+            group_chi2_plots = []
+            group_valid_chi2s = []
+            group_summaries = []
+            
+            for yfile, label in zip(group_files, group_labels):
+                if yfile in file_results:
+                    results = file_results[yfile]
+                    chi2 = results['chi2']
+                    ndf = results['ndf']
+                    obs_chi2s = results['obs_chi2s']
+                    valid_chi2s = results['valid_chi2s']
+                    
+                    group_valid_chi2s.append(valid_chi2s)
+                    group_summaries.append({
+                        "label": label,
+                        "Global chi2": f"{chi2:.2f}",
+                        "Degrees of freedom (ndf)": f"{int(ndf)}",
+                        "Reduced chi2": f"{chi2 / ndf:.2f}" if ndf > 0 else "undefined (ndf = 0)",
+                        "Averaged chi2s over all obs.": f"{np.mean(valid_chi2s):.2f}" if valid_chi2s else "undefined (no valid observables)"
+                    })
+                    
+                    chi2_plot = {}
+                    for obs, chi2_value in obs_chi2s.items():
+                        if chi2_value == -1:
+                            continue
+                        analysis_name = obs.split("/")[1]
+                        bin_id = obs.split("/")[2].split("-")[0]
+                        if analysis_name not in chi2_plot:
+                            chi2_plot[analysis_name] = []
+                        existing_bin_ids = [b[0] for b in chi2_plot[analysis_name]]
+                        new_bin_id = bin_id
+                        suffix = ord('b')
+                        while new_bin_id in existing_bin_ids:
+                            new_bin_id = f"{bin_id}-{chr(suffix)}"
+                            suffix += 1
+                        chi2_plot[analysis_name].append((new_bin_id, chi2_value))
+                    group_chi2_plots.append(chi2_plot)
+                else:
+                    print(f"Warning: No precomputed results found for {yfile}, skipping...")
+            
+            has_valid_data = any(group_chi2_plots) and any(any(valid_chi2s) for valid_chi2s in group_valid_chi2s)
+            if group_chi2_plots and has_valid_data:
+                group_outdir = os.path.join(args.outdir, group_name)
+                print(f"Creating plots for {group_name} in {group_outdir}...")
+                
+                group_chi2_plot_def = None
+                group_valid_chi2s_def = None
+                default_label = args.default_label
+                
+                if default_file_analyses:
+                    matching_default_file = find_matching_default_file(
+                        signature, group_name, default_file_analyses, 
+                        group_by_name=group_by_name, debug=args.debug)
+                    
+                    if matching_default_file and matching_default_file in default_file_results:
+                        default_results = default_file_results[matching_default_file]
+                        group_valid_chi2s_def = default_results['valid_chi2s']
+                        
+                        group_chi2_plot_def = {}
+                        for obs, chi2_value in default_results['obs_chi2s'].items():
+                            if chi2_value == -1:
+                                continue
+                            analysis_name = obs.split("/")[1]
+                            bin_id = obs.split("/")[2].split("-")[0]
+                            if analysis_name not in group_chi2_plot_def:
+                                group_chi2_plot_def[analysis_name] = []
+                            group_chi2_plot_def[analysis_name].append((bin_id, chi2_value))
+                        
+                        if args.debug:
+                            print(f"  Using default file: {matching_default_file.name}")
+                    else:
+                        if args.debug:
+                            print(f"  No matching default file found for group {group_name}")
+                
+                plot_chi2_per_analysis(group_chi2_plots, group_labels, chi2_plot_def=group_chi2_plot_def, 
+                                     default_label=default_label, outdir=group_outdir)
+                plot_chi2_distribution(group_valid_chi2s, group_labels, valid_chi2s_def=group_valid_chi2s_def, 
+                                     default_label=default_label, outdir=group_outdir)
+                
+                create_index_html(group_outdir, group_summaries, group_chi2_plots)
+            else:
+                print(f"Skipping {group_name}: no valid data to plot")
+            print()
+        create_master_index_html(args.outdir, groups, args.default_label if args.default else None, group_by_name)
     
     return 0
 
-def process_files(args, loader, weights, valid_bins=None):
+
+def process_files(args, loader, weights, analyses, valid_bins=None):
     """Process individual YODA files."""
     if args.labels and len(args.labels) == len(args.yoda_files):
         labels = args.labels
@@ -1000,8 +1563,8 @@ def process_files(args, loader, weights, valid_bins=None):
         
         label = labels[idx]
 
-        differences, squared_errors, bin_weights, bin_names = loader.get_bin_differences(
-            str(yoda_file), weights, include_ref_error=True, debug=args.debug)
+        differences, squared_errors, bin_weights, bin_names, _ = loader.get_bin_differences(
+            str(yoda_file), weights, analyses=analyses, include_ref_error=True, debug=args.debug)
         chi2, ndf = global_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
         obs_chi2s = obs_chi2(differences, squared_errors, bin_weights, bin_names, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
         valid_chi2s = [v for v in obs_chi2s.values() if v != -1]
@@ -1040,10 +1603,9 @@ def process_files(args, loader, weights, valid_bins=None):
 
     chi2_plot_def = None
     valid_chi2s_def = None
-    
     if args.default:
-        differences_def, squared_errors_def, bin_weights_def, bin_names_def = loader.get_bin_differences(
-            args.default, weights, include_ref_error=True, debug=args.debug)
+        differences_def, squared_errors_def, bin_weights_def, bin_names_def, _ = loader.get_bin_differences(
+            args.default, weights, analyses, include_ref_error=True, debug=args.debug)
         chi2_def, ndf_def = global_chi2(differences_def, squared_errors_def, bin_weights_def, bin_names_def, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
         obs_chi2s_def = obs_chi2(differences_def, squared_errors_def, bin_weights_def, bin_names_def, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
         valid_chi2s_def = [v for v in obs_chi2s_def.values() if v != -1]
