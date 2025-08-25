@@ -655,13 +655,54 @@ def find_matching_default_file(group_signature, group_name, default_file_analyse
     return None
 
 
+def get_label_for_file(yfile, tags, labels):
+    """
+    Get the appropriate label for a YODA file based on tags and labels.
+    
+    :param yfile: Path object of the YODA file
+    :param tags: List of tags to match against
+    :param labels: List of labels corresponding to tags (same order)
+    :return: Corresponding label if found, otherwise None
+    """
+    if not tags or not labels or len(tags) != len(labels):
+        return None
+    
+    filename = yfile.name
+    for tag, label in zip(tags, labels):
+        if tag in filename:
+            return label
+    return None
+
+
+def sort_files_by_tag_order(files, tags):
+    """
+    Sort files based on the order of tags in the command line.
+    Files are ordered by the position of their matching tag in the tags list.
+    
+    :param files: List of file Path objects
+    :param tags: List of tags in command line order
+    :return: List of files sorted by tag order
+    """
+    if not tags:
+        return files
+    
+    def get_tag_index(yfile):
+        filename = yfile.name
+        for i, tag in enumerate(tags):
+            if tag in filename:
+                return i
+        return len(tags)  # Files without matching tags go to the end
+    
+    return sorted(files, key=get_tag_index)
+
+
 def plot_chi2_per_analysis(all_chi2_plots, labels, chi2_plot_def=None, default_label="default", outdir="chi2_plots"):
     """
     Plot chi2 per analysis for multiple tunes, optionally comparing to default.
     """
     os.makedirs(outdir, exist_ok=True)
-    rainbow = plt.get_cmap('rainbow')
-    colors = [rainbow(i / max(1, len(labels)-1)) for i in range(len(labels))]
+    plasma = plt.get_cmap('plasma')
+    colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
 
     all_analyses = set()
     for chi2_plot in all_chi2_plots:
@@ -858,8 +899,8 @@ def plot_chi2_distribution(all_valid_chi2s, labels, valid_chi2s_def=None, defaul
     if n_plots == 1:
         axes = [axes]
 
-    rainbow = plt.get_cmap('rainbow')
-    colors = [rainbow(i / max(1, len(filtered_chi2s)-1)) for i in range(len(filtered_chi2s))]
+    plasma = plt.get_cmap('plasma')
+    colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
 
     plot_idx = 0
     for chi2s, label, color in zip(filtered_chi2s, filtered_labels, colors):
@@ -1112,7 +1153,7 @@ def main():
     parser.add_argument("-w",  "--weights",             default=None, help="Path to the weights file (optional, if not provided, all weights default to 1.0)")
     parser.add_argument("-a",  "--analyses",            default=None, help="Path to file containing list of analyses to include (optional, if not provided, all analyses are included)")
     parser.add_argument(       "--weighted",            action="store_true", default=False, help="Enable weighted chi2 calculation")
-    parser.add_argument("-l",  "--labels",              nargs="+", help="Labels for each YODA file (same order)")
+    parser.add_argument("-l",  "--labels",              nargs="+", help="Labels for each YODA file (same order) or labels corresponding to tags when used with --tags")
     parser.add_argument("-p",  "--plots",               action="store_true", default=False, help="Enable plotting of chi2 per analysis")
     parser.add_argument("-d",  "--default",             default=None, help="Path to a YODA file, directory, or tag for comparison of chi2. For directories/tags, matching files are automatically selected per group.")
     parser.add_argument("-dl", "--default_label",       default="default", help="Label for the default YODA file in output and plots")
@@ -1160,6 +1201,12 @@ def main():
         if ('/' in args.default or '\\' in args.default) and not default_path.exists():
             print(f"Warning: Default path {args.default} does not exist")
             args.default = None
+
+    if args.tags and args.labels:
+        if len(args.tags) != len(args.labels):
+            print(f"Warning: Number of tags ({len(args.tags)}) does not match number of labels ({len(args.labels)}), falling back to filename-based labeling...")
+        elif args.debug:
+            print(f"Using tag-label mapping: {dict(zip(args.tags, args.labels))}")
 
     valid_bins = None
     if args.envelope:
@@ -1416,8 +1463,17 @@ def process_directory(args, loader, weights, analyses, valid_bins=None, group_by
                 else:
                     group_name = list(endings)[0] if endings else f"group_{group_idx+1}"
             
+            if args.tags:
+                group_files = sort_files_by_tag_order(group_files, args.tags)
+            
             group_labels = []
             for yfile in group_files:
+                if args.tags and args.labels and len(args.tags) == len(args.labels):
+                    tag_label = get_label_for_file(yfile, args.tags, args.labels)
+                    if tag_label:
+                        group_labels.append(tag_label)
+                        continue
+                
                 name = yfile.stem
                 if name.endswith('.yoda'):
                     name = name[:-5]
@@ -1604,40 +1660,56 @@ def process_files(args, loader, weights, analyses, valid_bins=None):
     chi2_plot_def = None
     valid_chi2s_def = None
     if args.default:
-        differences_def, squared_errors_def, bin_weights_def, bin_names_def, _ = loader.get_bin_differences(
-            args.default, weights, analyses, include_ref_error=True, debug=args.debug)
-        chi2_def, ndf_def = global_chi2(differences_def, squared_errors_def, bin_weights_def, bin_names_def, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
-        obs_chi2s_def = obs_chi2(differences_def, squared_errors_def, bin_weights_def, bin_names_def, weighted=args.weighted, valid_bins=valid_bins, debug=args.debug)
-        valid_chi2s_def = [v for v in obs_chi2s_def.values() if v != -1]
-        summaries.append({
-            "label": args.default_label,
-            "Global chi2": f"{chi2_def:.2f}",
-            "Degrees of freedom (ndf)": f"{int(ndf_def)}",
-            "Reduced chi2": f"{chi2_def / ndf_def:.2f}" if ndf_def > 0 else "undefined (ndf = 0)",
-            "Averaged chi2s over all obs.": f"{np.mean(valid_chi2s_def):.2f}" if valid_chi2s_def else "undefined (no valid observables)"
-        })
+        try:
+            _, default_file_results = process_default_files(
+                args.default, loader, weights, analyses, valid_bins, debug=args.debug)
+            
+            if default_file_results:
+                default_file = list(default_file_results.keys())[0]
+                default_results = default_file_results[default_file]
+                
+                chi2_def = default_results['chi2']
+                ndf_def = default_results['ndf']
+                obs_chi2s_def = default_results['obs_chi2s']
+                valid_chi2s_def = default_results['valid_chi2s']
+                
+                summaries.append({
+                    "label": args.default_label,
+                    "Global chi2": f"{chi2_def:.2f}",
+                    "Degrees of freedom (ndf)": f"{int(ndf_def)}",
+                    "Reduced chi2": f"{chi2_def / ndf_def:.2f}" if ndf_def > 0 else "undefined (ndf = 0)",
+                    "Averaged chi2s over all obs.": f"{np.mean(valid_chi2s_def):.2f}" if valid_chi2s_def else "undefined (no valid observables)"
+                })
 
-        print(f"\nResults for {args.default_label}:")
-        for k, v in summaries[-1].items():
-            if k != "label":
-                print(f"  {k}: {v}")
+                print(f"\nResults for {args.default_label}:")
+                for k, v in summaries[-1].items():
+                    if k != "label":
+                        print(f"  {k}: {v}")
 
-        if args.plots:
-            chi2_plot_def = {}
-            for obs, chi2_value in obs_chi2s_def.items():
-                if chi2_value == -1:
-                    continue
-                analysis_name = obs.split("/")[1]
-                bin_id = obs.split("/")[2].split("-")[0]
-                if analysis_name not in chi2_plot_def:
-                    chi2_plot_def[analysis_name] = []
-                existing_bin_ids = [b[0] for b in chi2_plot_def[analysis_name]]
-                new_bin_id = bin_id
-                suffix = ord('b')
-                while new_bin_id in existing_bin_ids:
-                    new_bin_id = f"{bin_id}-{chr(suffix)}"
-                    suffix += 1
-                chi2_plot_def[analysis_name].append((new_bin_id, chi2_value))
+                if args.plots:
+                    chi2_plot_def = {}
+                    for obs, chi2_value in obs_chi2s_def.items():
+                        if chi2_value == -1:
+                            continue
+                        analysis_name = obs.split("/")[1]
+                        bin_id = obs.split("/")[2].split("-")[0]
+                        if analysis_name not in chi2_plot_def:
+                            chi2_plot_def[analysis_name] = []
+                        existing_bin_ids = [b[0] for b in chi2_plot_def[analysis_name]]
+                        new_bin_id = bin_id
+                        suffix = ord('b')
+                        while new_bin_id in existing_bin_ids:
+                            new_bin_id = f"{bin_id}-{chr(suffix)}"
+                            suffix += 1
+                        chi2_plot_def[analysis_name].append((new_bin_id, chi2_value))
+            else:
+                print(f"Warning: No valid default files found from: {args.default}")
+                
+        except Exception as e:
+            print(f"Error processing default files: {e}")
+            if args.debug:
+                import traceback
+                traceback.print_exc()
 
     if args.plots:
         if not all_chi2_plots:
