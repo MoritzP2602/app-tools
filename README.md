@@ -55,7 +55,7 @@ Chi-squared analysis:
 # use --help to get a full list of available options
 app-tools-chi_squared --help
 # get chi-squared values for all yoda files in a directory (and all subdirectories using --subdir) (e.g. newscan/), use --tags to filter .yoda files (e.g. git hash), use --plots to plot the results (grouped by filename), labels and colors are assigned to all files of a given tag (e.g. results for multiple runs and different tunes, tune1-DY_7TeV.yoda, tune1-DY_13TeV.yoda, ... and tune2-DY_7TeV.yoda, tune2-DY_13TeV.yoda, ... using --tags tune1 tune2 --plots will automatically group the .yoda files into the groups DY_7TeV, DY_13TeV, ... and plot the results together)
-app-tools-chi_squared directory/ [--weights weights.txt] [--weighted] [--tags tag1 tag2 ...] [--labels label1 label2 ...] [--colors color1 color2 ...] [--plots] [--default default-tag/default-directory/default.yoda] [--default_label default_label] [-o outdir]
+app-tools-chi_squared directory/ [--weights weights.txt] [--tags tag1 tag2 ...] [--labels label1 label2 ...] [--colors color1 color2 ...] [--plots] [--default default-tag/default-directory/default.yoda] [--default_label default_label] [-o outdir]
 # get chi-squared values for all yoda files, --plots creates plots for each analysis, --default creates additional ratio plots, you can choose the labels and colors in the plots using --labels and --colors
 app-tools-chi_squared data1.yoda [data2.yoda ...] [--weights weights.txt] [--labels label1 label2 ...] [--colors color1 color2 ...] [--plots] [--default default.yoda] [--default_label default_label] [-o outdir]
 ```
