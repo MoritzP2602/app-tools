@@ -1203,7 +1203,7 @@ def main():
     parser.add_argument("yoda_files", nargs="+", help="Path(s) to one or more YODA files or a directory")
     parser.add_argument("-w",  "--weights",             default=None, help="Path to the weights file (optional, if not provided, all weights default to 1.0)")
     parser.add_argument("-a",  "--analyses",            default=None, help="Path to file containing list of analyses to include (optional, if not provided, all analyses are included)")
-    parser.add_argument(       "--weighted",            action="store_true", default=False, help="Enable weighted chi2 calculation")
+    parser.add_argument(       "--weighted",            action="store_true", default=False, help="Enable weighted chi2 calculation, i.e. each term is multiplied by its weight squared: chi^2 += w^2 * chi^2_bin and ndf += w^2 (weights > 1 not allowed) (otherwise, all weights > 0 default to 1.0)")
     parser.add_argument("-l",  "--labels",              nargs="+", help="Labels for each YODA file (same order) or labels corresponding to tags when used with --tags")
     parser.add_argument("-c",  "--colors",              nargs="+", help="Colors for each YODA file (same order) or colors corresponding to tags when used with --tags. Can be color names, hex codes, or matplotlib color specifications.")
     parser.add_argument("-p",  "--plots",               action="store_true", default=False, help="Enable plotting of chi2 per analysis")
