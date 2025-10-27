@@ -2,8 +2,7 @@
 
 This directory contains files for performing Sherpa tuning with Apprentice on a high-performance computing (HPC) system, using the app-tools scripts. The setup is optimized for clusters using Condor as the job submission and scheduling system.
 
-In `run_sherpa.sh`, the path to the Sherpa installation needs to be adjusted (line 30), and in ¸`sherpa.jdf`, the path to the `run_sherpa.sh` file needs to be specified.
-
+In `run_sherpa.sh`, the path to the Sherpa installation needs to be adjusted (line 30), and in `sherpa.jdf`, the path to the `run_sherpa.sh` file needs to be specified (line 1). In `run_app-build.sh`, the paths to the Rivet (line 6) and Apprentice installation (line 33) need to be adjusted, and in `build.jdf`, the path to the `run_app-build.sh` file need to be specified (line 1).
 
 FOR A SINGLE RUNCARD/PROCESS
 
@@ -23,8 +22,8 @@ FOR A SINGLE RUNCARD/PROCESS
 4. Prepare job submission (condor):
   - Run: 'app-tools-prepare_run_directories newscan n'
   (this generates n subfolders for each folder in newscan)
-  - 'mkdir ErrLogOut' (directory for the HPC log, error and output files of each job)
-  - In the directory that contains newscan run: 'condor_submit sherpa.jdf' (this submits N * n jobs on the HPC)
+  - Run: 'mkdir ErrLogOut' (directory for the HPC log, error and output files of each job)
+  - In the directory that contains newscan, run: 'condor_submit sherpa.jdf' (this submits N * n jobs on the HPC)
 
 5. Combine .yoda files:
   - Run: 'app-tools-yodamerge newscan'
@@ -58,8 +57,23 @@ FOR MULTIPLE RUNCARDS/PROCESSES
 3. Do steps 3, 4 & 5 in the SINGLE RUNCARD guide above for each process (i.e. in their respective directory)
 
 4. Combine the grids:
-  - 'mkdir -p merged/newscan'
+  - Run: 'mkdir -p merged/newscan'
   - Run: 'app-tools-yodamerge_directories PROCESS_1/newscan PROCESS_2/newscan [PROCESS_3/newscan ...] merged/newscan'
   (this will combine all the grids into a single newscan directory, keeping the params.dat files)
 
-5. Proceed with steps 6, 7 & 8 in the SINGLE RUNCARD guide above in the merged directory
+5. Proceed with steps 6, 7 & 8 in the SINGLE RUNCARD guide above in the merged directory (you can also scale the weights from each process by using 'app-tools-combine_weights PROCESS_1/weights.txt factor_1 PROCESS_2/weights.txt factor_2 [PROCESS_3/weights.txt factor_3 ...] -o merged/weights.txt')
+
+
+BUILD THE SURROGATES ON THE HPC
+
+1. Prepare weight files:
+  - Run: 'app-tools-split_build_process weights.txt n'
+  (this splits the weights file into n weight files of equal size, saved in the weight_files directory)
+
+2. Prepare job submission (condor):
+  - Change X,Y in build.jdf to the wanted polynomial orders
+  - In the directory that contains newscan and weight_files, run: 'condor_submit build.jdf'
+  
+3. Combine surrogates:
+  - Run: 'app-tools-split_build_process app_X_Y n'
+  (this will combine the n partial surrogates into a single .json file)

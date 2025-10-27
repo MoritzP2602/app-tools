@@ -27,7 +27,7 @@ if [ -d "$INITIAL_RUN" ]; then
   YODA=$(basename "$DIRECTORY")
   SEED=$(od -An -N4 -tu4 < /dev/urandom | tr -d ' ')
   echo "Entering $DIRECTORY and running Sherpa with SEED=$SEED"
-  cd "$INITIAL_RUN" && ~/PATH/TO/SHERPA/INSTALLATION/bin/Sherpa -f "$YAML" -R "$SEED" -A "../$DIRECTORY/$YODA"
+  cd "$INITIAL_RUN" && /PATH/TO/SHERPA/INSTALLATION/bin/Sherpa -f "$YAML" -R "$SEED" -A "../$DIRECTORY/$YODA"
 else
   echo "$INITIAL_RUN directory not found!"
   exit 1
