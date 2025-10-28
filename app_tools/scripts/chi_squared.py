@@ -8,13 +8,12 @@ import numpy as np
 import matplotlib.ticker as ticker
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from cycler import cycler
 import shutil
 from pathlib import Path
 from tabulate import tabulate
 
 if tuple(map(int, yoda.__version__.split("."))) < (2, 1, 0):
-    print("Warning: This script is optimized for YODA 2.1.0. You are using YODA", yoda.__version__, "... please double-check your results!")
+    print("[WARNING] This script is optimized for YODA 2.1.0. You are using YODA", yoda.__version__, "... please double-check your results!\n")
 
 
 def read_weights(wfile):
@@ -791,7 +790,7 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
             end = min((chunk_idx + 1) * chunk_size, n_bins)
             chunk_bin_ids = bin_ids[start:end]
             fig, (ax_top, ax_bottom) = plt.subplots(
-                2, 1, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(4, 3))
+                2, 1, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
 
             for i, (bin_data, label) in enumerate(zip(tune_bin_data, labels)):
                 if not bin_data:
@@ -805,17 +804,17 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
                 valid_bin_ids = [chunk_bin_ids[j] for j in valid_indices]
                 valid_chi2s = [chunk_chi2s[j] for j in valid_indices]
                 
-                ax_top.plot(valid_bin_ids, valid_chi2s, marker='o', markersize=1.5, linestyle='', label=label, color=colors[i])
+                ax_top.plot(valid_bin_ids, valid_chi2s, marker='o', linestyle='', label=label, color=colors[i])
                 if len(valid_chi2s) > 1:
                     ax_top.plot(valid_bin_ids, valid_chi2s, linestyle='-', alpha=0.5, color=colors[i])
                     
             if chi2_values_def is not None:
                 chunk_chi2_values_def = chi2_values_def[start:end]
                 if default_color == "black":
-                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', markersize=1.5, color=default_color, linestyle='', label=default_label, alpha=0.6)
+                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', color=default_color, linestyle='', label=default_label, alpha=0.6)
                     ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color=default_color, alpha=0.3)
                 else:
-                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', markersize=1.5, color=default_color, linestyle='', label=default_label)
+                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', color=default_color, linestyle='', label=default_label)
                     ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color=default_color, alpha=0.5)
 
             ax_top.set_ylabel(r'$\chi^2 / \mathrm{ndf}$')
@@ -840,7 +839,7 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
                     valid_bin_ids = [chunk_bin_ids[j] for j in range(len(chunk_bin_ids)) if valid_mask[j]]
                     valid_ratios = (chunk_chi2s / chunk_chi2_values_def)[valid_mask]
                     
-                    ax_bottom.plot(valid_bin_ids, valid_ratios, marker='o', markersize=1.5, linestyle='', label=f"{label}/{default_label}", color=colors[i])
+                    ax_bottom.plot(valid_bin_ids, valid_ratios, marker='o', linestyle='', label=f"{label}/{default_label}", color=colors[i])
                     if len(valid_ratios) > 1:
                         ax_bottom.plot(valid_bin_ids, valid_ratios, linestyle='-', alpha=0.5, color=colors[i])
 
@@ -939,7 +938,7 @@ def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None
         if debug: print("Warning: No plots to generate for chi2 distribution")
         return
         
-    fig, axes = plt.subplots(n_plots, 1, figsize=(4, max(3, n_plots)), sharex=True, gridspec_kw={'hspace': 0})
+    fig, axes = plt.subplots(n_plots, 1, figsize=(4.67, max(3, n_plots)), sharex=True, gridspec_kw={'hspace': 0})
 
     if n_plots == 1:
         axes = [axes]
@@ -957,7 +956,7 @@ def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         ax = axes[plot_idx]
         ax.bar(bin_centers, hist, width=(bin_edges[1]-bin_edges[0]), alpha=0.2, color=color, label=None)
-        ax.step(bin_edges, np.append(hist, hist[-1]), where='post', color=color, linewidth=1, alpha=0.7, label=label)
+        ax.step(bin_edges, np.append(hist, hist[-1]), where='post', color=color, alpha=0.7, label=label)
         ax.set_ylabel('Density')
         ax.set_ylim(global_ylim)
         ax.legend(loc='upper right')
@@ -970,10 +969,10 @@ def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None
         ax = axes[plot_idx]
         if default_color == "black":
             ax.bar(bin_centers_def, hist_def, width=(bin_edges_def[1]-bin_edges_def[0]), alpha=0.2, color=default_color, label=None)
-            ax.step(bin_edges_def, np.append(hist_def, hist_def[-1]), where='post', color=default_color, linewidth=1, alpha=0.7, label=default_label)
+            ax.step(bin_edges_def, np.append(hist_def, hist_def[-1]), where='post', color=default_color, alpha=0.7, label=default_label)
         else:
             ax.bar(bin_centers_def, hist_def, width=(bin_edges_def[1]-bin_edges_def[0]), alpha=0.2, color=default_color, label=None)
-            ax.step(bin_edges_def, np.append(hist_def, hist_def[-1]), where='post', color=default_color, linewidth=1, alpha=0.7, label=default_label)
+            ax.step(bin_edges_def, np.append(hist_def, hist_def[-1]), where='post', color=default_color, alpha=0.7, label=default_label)
         ax.set_ylabel('Density')
         ax.set_ylim(global_ylim)
         ax.legend(loc='upper right')
@@ -1109,18 +1108,22 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
         if fname.endswith((".pdf", ".png", ".jpg", ".jpeg", ".svg")):
             plot_files.append(fname)
 
-    from collections import defaultdict
-    exp_analysis_groups = defaultdict(list)
+    exp_analysis_groups = {}
     for fname in plot_files:
-        parts = fname.split('_')
-        if parts[0] == "chi2":
+        if fname.startswith("chi2_"):
             continue
-        if len(parts) >= 3:
-            group = "_".join(parts[:3])
-        elif len(parts) >= 2:
-            group = "_".join(parts[:2])
+        if "_chi2_plot" in fname:
+            group = fname.split("_chi2_plot")[0]
         else:
-            group = parts[0]
+            parts = fname.split('_')
+            if len(parts) >= 3:
+                group = "_".join(parts[:3])
+            elif len(parts) >= 2:
+                group = "_".join(parts[:2])
+            else:
+                group = parts[0]
+        if group not in exp_analysis_groups:
+            exp_analysis_groups[group] = []
         exp_analysis_groups[group].append(fname)
 
     now = datetime.datetime.now().strftime("%A, %d. %B %Y %H:%M")
@@ -1206,7 +1209,7 @@ def create_index_html(outdir="chi2_plots", summaries=None, all_chi2_plots=None):
     print(f"Created {os.path.join(outdir, 'index.html')}")
 
 
-def apply_rivet_style(use_tex_preference=True):
+def apply_rivet_style(use_tex_preference=False):
     """Apply a Rivet-like Matplotlib style via rcParams.
     This mirrors the provided default.mplstyle as closely as reasonable in-script.
 
@@ -1217,24 +1220,36 @@ def apply_rivet_style(use_tex_preference=True):
         if shutil.which("pdflatex") is None:
             usetex = False
 
-    mpl.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["Palatino"],
-        "mathtext.fontset": "custom",
-        "mathtext.rm": "Palatino",
-        "mathtext.bf": "Palatino:bold",
-        "mathtext.it": "Palatino:italic",
-        "mathtext.default": "it",
-        "text.usetex": usetex,
-        "font.size": 10,
-        "axes.titlesize": 9,
-        "axes.labelsize": 10,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "legend.fontsize": 10,
-        "figure.titlesize": 10,
-        "lines.linewidth": 0.8,
-    })
+    if usetex:
+        mpl.rcParams.update({
+            "font.family": "serif",
+            "font.serif": ["Palatino"],
+            "mathtext.fontset": "custom",
+            "mathtext.rm": "Palatino",
+            "mathtext.bf": "Palatino:bold",
+            "mathtext.it": "Palatino:italic",
+            "mathtext.default": "it",
+            "text.usetex": True,
+            "font.size": 10,
+            "axes.titlesize": 9,
+            "axes.labelsize": 9,
+            "xtick.labelsize": 7,
+            "ytick.labelsize": 7,
+            "legend.fontsize": 9,
+            "figure.titlesize": 10,
+        })
+    else:
+        mpl.rcParams.update({
+            "font.family": "serif",
+            "text.usetex": False,
+            "font.size": 10,
+            "axes.titlesize": 9,
+            "axes.labelsize": 9,
+            "xtick.labelsize": 7,
+            "ytick.labelsize": 7,
+            "legend.fontsize": 7,
+            "figure.titlesize": 10,
+        })
     mpl.rcParams.update({
         "figure.figsize": (4.67, 4.21),
         "figure.subplot.bottom": 0.092,
@@ -1249,7 +1264,8 @@ def apply_rivet_style(use_tex_preference=True):
         "axes.labelpad": 2.0,
         "axes.linewidth": 0.3,
         "xaxis.labellocation": "right",
-        "lines.markersize": 2.5,
+        "lines.markersize": 1.8,
+        "lines.linewidth": 1.0,
         "axes.formatter.min_exponent": 1,
     })
     mpl.rcParams.update({
@@ -1283,7 +1299,7 @@ def main():
     parser.add_argument("-l",  "--labels",              nargs="+", help="Labels for each YODA file (same order) or labels corresponding to tags when used with --tags")
     parser.add_argument("-c",  "--colors",              nargs="+", help="Colors for each YODA file (same order) or colors corresponding to tags when used with --tags. Can be color names, hex codes, or matplotlib color specifications.")
     parser.add_argument("-p",  "--plots",               action="store_true", default=False, help="Enable plotting of chi2 per analysis")
-    parser.add_argument(       "--rivet_style",         action="store_true", default=False, help="Apply Rivet-like matplotlib styling for plots")
+    parser.add_argument(       "--use_tex",             action="store_true", default=False, help="Use LaTeX for plots")
     parser.add_argument("-d",  "--default",             default=None, help="Path to a YODA file, directory, or tag for comparison of chi2. For directories/tags, matching files are automatically selected per group.")
     parser.add_argument("-dl", "--default_label",       default="default", help="Label for the default YODA file in output and plots")
     parser.add_argument("-dc", "--default_color",       default="black", help="Color used for the default dataset in plots (name or hex). Default is black")
@@ -1556,8 +1572,7 @@ def process_directory(args, loader, weights, analyses, valid_bins=None, group_by
             args.default = None
 
     if args.plots:
-        if args.rivet_style:
-            apply_rivet_style(use_tex_preference=True)
+        apply_rivet_style(use_tex_preference=args.use_tex)
         print()
         if not file_analyses:
             print("No YODA files found for plotting.")
@@ -1821,8 +1836,7 @@ def process_files(args, loader, weights, analyses, valid_bins=None, debug=False)
                 traceback.print_exc()
 
     if args.plots:
-        if args.rivet_style:
-            apply_rivet_style(use_tex_preference=True)
+        apply_rivet_style(use_tex_preference=args.use_tex)
         if not all_chi2_plots:
             print("No valid YODA files found. Skipping plot and HTML creation")
         else:
