@@ -1,0 +1,10 @@
+Executable     = /PATH/TO/run_app-build.sh
+arguments      = newscan --order X,Y -o app_X_Y/ -w $(file)
++MaxRuntime    = 86400
+max_idle       = 1000
+
+Error          = ErrLogOut/job.$(Cluster).$(Process).err
+Log            = ErrLogOut/job.$(Cluster).$(Process).log
+Output         = ErrLogOut/job.$(Cluster).$(Process).out
+
+Queue file from weight_files.txt

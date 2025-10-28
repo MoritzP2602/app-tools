@@ -1,0 +1,10 @@
+Executable     = /PATH/TO/run_sherpa.sh
+arguments      = $(folder)
++MaxRuntime    = 86400
+max_idle       = 1000
+
+Error          = ErrLogOut/job.$(Cluster).$(Process).err
+Log            = ErrLogOut/job.$(Cluster).$(Process).log
+Output         = ErrLogOut/job.$(Cluster).$(Process).out
+
+Queue folder from run_directories.txt

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "app-tools"
+version = "1.0.3"
+description = "Tools for working with Apprentice"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "Moritz Pabst", email = "moritz.pabst@stud.uni-goettingen.de"}
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "numpy>=1.19.0",
+    "matplotlib>=3.3.0",
+    "tabulate>=0.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/MoritzP2602/app-tools"
+
+[project.scripts]
+app-tools-chi_squared = "app_tools.scripts.chi_squared:main"
+app-tools-combine_weights = "app_tools.scripts.combine_weights:main"
+app-tools-create_grid = "app_tools.scripts.create_grid:main"
+app-tools-split_build_process = "app_tools.scripts.split_build_process:main"
+app-tools-write_weights = "app_tools.scripts.write_weights:main"
+
+[tool.setuptools]
+packages = ["app_tools", "app_tools.scripts"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app_tools = ["scripts/app-tools-*"]

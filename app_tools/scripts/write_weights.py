@@ -1,29 +1,29 @@
 
 import argparse
+import os
+import yoda
+import rivet
 
 
-def extract_observables(yoda_file):
-    observables = []
-    current_path = None
-    bin_count = 0
+class yodaLoader:
+    paths = rivet.getAnalysisRefPaths()
+    yodas = {}
 
-    with open(yoda_file, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("BEGIN"):
-                current_path = None
-                bin_count = 0
-            elif line.startswith("Path:"):
-                current_path = line.split(":", 1)[1].strip()
-            elif line.startswith("# xlow"):
-                bin_count = 0
-            elif current_path and line and not line.startswith("#") and not line.startswith("END"):
-                bin_count += 1
-            elif line.startswith("END") and current_path:
-                observables.append((current_path, bin_count))
-                current_path = None
-
-    return observables
+    def load(self, analysis_name):
+        base_path = self.paths[0]
+        gz_path = f"{base_path}/{analysis_name}.yoda.gz"
+        yoda_path = f"{base_path}/{analysis_name}.yoda"
+        if analysis_name not in self.yodas.keys():
+            if os.path.exists(gz_path):
+                ref_yoda = yoda.readYODA(gz_path)
+            elif os.path.exists(yoda_path):
+                ref_yoda = yoda.readYODA(yoda_path)
+            else:
+                raise FileNotFoundError(f"Neither {gz_path} nor {yoda_path} found")
+            self.yodas[analysis_name] = ref_yoda
+            return ref_yoda
+        else:
+            return self.yodas[analysis_name]
 
 
 def main():
@@ -33,20 +33,53 @@ def main():
     
     args = parser.parse_args()
 
-    all_observables = extract_observables(args.yoda_file)
+    loader = yodaLoader()
     
-    excluded_patterns = ["/REF", "/RAW", "/MC", "/tmp", "/sum", "/total", "[", "/_"]
+    try:
+        yd = yoda.readYODA(args.yoda_file)
+    except Exception as e:
+        print(f"Error: Could not read YODA file {args.yoda_file}: {e}")
+        return
+    
     observables = []
     ignored_count = 0
     
-    for path, bins in all_observables:
-        if any(pattern in path for pattern in excluded_patterns):
+    for obs in yd:
+        try:
+            analysis_name = obs.split("/")[1].split(":")[0]
+        except (IndexError, AttributeError):
             ignored_count += 1
-        else:
-            observables.append((path, bins))
+            continue
+        
+        try:
+            ref_yoda = loader.load(analysis_name)
+            obs_ref = f"/REF/{analysis_name}/{obs.split('/')[-1]}"
+            ref_obj = ref_yoda.get(obs_ref)
+            
+            if ref_obj is None:
+                ignored_count += 1
+                continue
+            
+            if hasattr(ref_obj, 'bins') and callable(ref_obj.bins):
+                bin_count = len(ref_obj.bins())
+            elif hasattr(ref_obj, 'points') and callable(ref_obj.points):
+                bin_count = len(ref_obj.points())
+            elif hasattr(ref_obj, 'numBins') and callable(ref_obj.numBins):
+                bin_count = ref_obj.numBins()
+            else:
+                bin_count = 1
+            
+            observables.append((obs, bin_count))
+            
+        except (FileNotFoundError, KeyError):
+            ignored_count += 1
+            continue
+        except Exception as e:
+            ignored_count += 1
+            continue
     
     if ignored_count > 0:
-        print(f"Ignored {ignored_count} observables containing: {', '.join(excluded_patterns)}")
+        print(f"Ignored {ignored_count} observables (no Rivet reference available)")
 
     total_bins = sum(bins for _, bins in observables)
 
@@ -54,6 +87,7 @@ def main():
         for path, bins in observables:
             out.write(f"{path} 1.0  # bins: {bins}\n")
 
+    print(f"Total number of observables: {len(observables)}")
     print(f"Total number of bins: {total_bins}")
 
 
