@@ -37,9 +37,11 @@ def write_lookup_table(param_list, outdir):
     """Write a lookup table with folder indices and parameter values."""
     if not param_list:
         return
-        
-    table_file = os.path.join(outdir, "params.dat")
-    
+
+    if outdir.endswith('/'):
+        outdir = outdir[:-1]
+    table_file = os.path.join(outdir + "/../", f"{outdir.split('/')[-1]}.dat")
+
     all_param_names = param_list[0].keys()
     param_names = sorted([name for name in all_param_names 
                          if isinstance(param_list[0][name], (int, float))])
