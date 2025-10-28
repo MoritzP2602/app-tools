@@ -8,13 +8,13 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="app-tools",
-    version="1.0.2",
+    version="1.0.3",
     author="Moritz Pabst",
     author_email="moritz.pabst@stud.uni-goettingen.de",
-    description="Tools for working with apprentice",
+    description="Tools for working with Apprentice",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/app-tools",
+    url="https://github.com/MoritzP2602/app-tools",
     packages=find_packages(),
     classifiers=[
         "Intended Audience :: Science/Research",
