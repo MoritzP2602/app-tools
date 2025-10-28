@@ -740,7 +740,6 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
         plasma = plt.get_cmap('plasma')
         colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
     elif len(colors) != len(labels):
-        print(f"Warning: Number of colors ({len(colors)}) does not match number of labels ({len(labels)}), using default plasma colormap")
         plasma = plt.get_cmap('plasma')
         colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
 
@@ -949,7 +948,6 @@ def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None
         plasma = plt.get_cmap('plasma')
         colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
     elif len(colors) < len(filtered_labels):
-        print(f"Warning: Number of colors ({len(colors)}) is less than number of filtered labels ({len(filtered_labels)}), using default plasma colormap")
         plasma = plt.get_cmap('plasma')
         colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
 
