@@ -850,7 +850,12 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
                 ax_bottom.yaxis.set_minor_locator(ticker.AutoMinorLocator(5))
                 ax_bottom.tick_params(axis='y', which='minor', length=3)
 
-                if len(chunk_bin_ids) > 10:
+                if len(chunk_bin_ids) > 20 and len(chunk_bin_ids) < 30:
+                    step = max(1, len(chunk_bin_ids) // 10)
+                    xticks = list(range(0, len(chunk_bin_ids), step))
+                    ax_bottom.set_xticks(xticks)
+                    ax_bottom.set_xticklabels([chunk_bin_ids[i] for i in xticks], rotation=90)
+                elif len(chunk_bin_ids) >= 30:
                     step = max(1, len(chunk_bin_ids) // 15)
                     xticks = list(range(0, len(chunk_bin_ids), step))
                     ax_bottom.set_xticks(xticks)
@@ -861,7 +866,12 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
             else:
                 ax_bottom.set_visible(False)
                 ax_top.set_xlabel('observable')
-                if len(chunk_bin_ids) > 10:
+                if len(chunk_bin_ids) > 20 and len(chunk_bin_ids) < 30:
+                    step = max(1, len(chunk_bin_ids) // 10)
+                    xticks = list(range(0, len(chunk_bin_ids), step))
+                    ax_top.set_xticks(xticks)
+                    ax_top.set_xticklabels([chunk_bin_ids[i] for i in xticks], rotation=90)
+                elif len(chunk_bin_ids) >= 30:
                     step = max(1, len(chunk_bin_ids) // 15)
                     xticks = list(range(0, len(chunk_bin_ids), step))
                     ax_top.set_xticks(xticks)
@@ -1247,7 +1257,7 @@ def apply_rivet_style(use_tex_preference=False):
             "axes.labelsize": 9,
             "xtick.labelsize": 7,
             "ytick.labelsize": 7,
-            "legend.fontsize": 7,
+            "legend.fontsize": 9,
             "figure.titlesize": 10,
         })
     mpl.rcParams.update({
