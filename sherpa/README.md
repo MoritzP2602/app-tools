@@ -16,7 +16,7 @@ FOR A SINGLE RUNCARD/PROCESS
 
 3. Create an Initial-run directory and initialize Sherpa:
   - Run: 'mkdir Initial-run && cd Initial-run'
-  - Run (on the HPC): 'Sherpa -I runcard.yaml' and 'Sherpa -e 0 runcard.yaml'
+  - Run: 'Sherpa -I runcard.yaml' and 'Sherpa -e 0 runcard.yaml'
   (initializes processes and computes ME)
 
 4. Prepare job submission (condor):
