@@ -23,11 +23,25 @@ if [ -d "$INITIAL_RUN" ]; then
     echo "Folder $DIRECTORY not found!"
     exit 1
   fi
+
+  INITIAL_RUN=$(realpath "$INITIAL_RUN")
   YAML=$(realpath "$YAML_FILE")
-  YODA=$(basename "$DIRECTORY")
+  YODA_BASENAME=$(basename "$DIRECTORY")
+  YODA="$YODA_BASENAME.yoda.gz"
+  OUTDIR=$(realpath "$DIRECTORY")
   SEED=$(od -An -N4 -tu4 < /dev/urandom | tr -d ' ')
-  echo "Entering $DIRECTORY and running Sherpa with SEED=$SEED"
-  cd "$INITIAL_RUN" && /PATH/TO/SHERPA/INSTALLATION/bin/Sherpa -f "$YAML" -R "$SEED" -A "../$DIRECTORY/$YODA"
+
+  echo ""
+  echo "INITIAL_RUN : $INITIAL_RUN"
+  echo "YAML        : $YAML"
+  echo "YODA        : $YODA"
+  echo "OUTDIR      : $OUTDIR"
+  echo "SEED        : $SEED"
+  echo ""
+
+  cp -r "$INITIAL_RUN"/Process "$INITIAL_RUN"/Results.zip* "$TMPDIR"
+  cd "$TMPDIR" && /PATH/TO/SHERPA/INSTALLATION/bin/Sherpa -f "$YAML" -R "$SEED"
+  cp -r Analysis.yoda.gz "$OUTDIR/$YODA"
 else
   echo "$INITIAL_RUN directory not found!"
   exit 1
