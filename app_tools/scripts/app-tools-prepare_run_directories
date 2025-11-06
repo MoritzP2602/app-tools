@@ -1,7 +1,7 @@
-
 #!/bin/bash
 
 OUTFILE="run_directories.txt"
+APPEND=false
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -9,6 +9,8 @@ while [ $# -gt 0 ]; do
             shift
             if [ -z "${1-}" ]; then echo "-o requires an argument" >&2; exit 1; fi
             OUTFILE="$1"; shift ;;
+        --add)
+            APPEND=true; shift ;;
         *) POSITIONAL+=("$1"); shift ;;
     esac
 done
@@ -16,17 +18,18 @@ while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done
 set -- "${POSITIONAL[@]}"
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 [-o outfile] <folder> [nsubfolders]"
+    echo "Usage: $0 [-o outfile] [--add] <folder> [nsubfolders]"
     echo "  <folder>      : Directory in which to create or list subfolders"
     echo "  [nsubfolders] : (Optional) Number of subfolders to create in each directory"
     echo "  -o outfile    : (Optional) Output filename (default: run_directories.txt)"
+    echo "  --add         : (Optional) Append to existing file instead of overwriting"
     echo "Creates subfolders for all subfolders in the specified directory and lists them in $OUTFILE."
     exit 1
 fi
 
 PREFIX="${1%/}"
 
-if [ -f "$OUTFILE" ]; then
+if [ "$APPEND" = false ] && [ -f "$OUTFILE" ]; then
     rm "$OUTFILE"
 fi
 
