@@ -5,7 +5,8 @@ if [ $# -lt 1 ]; then
     echo "Usage: $0 <folder> [nproc]"
     echo "  <folder> : Directory containing subfolders with YODA files"
     echo "  [nproc]  : Number of parallel jobs (default: 4)"
-    echo "Merges all .yoda.gz files in subdirectories into a single .yoda file in each subdirectory."
+    echo "If subdirectories have their own subfolders, merges all .yoda/.yoda.gz files from nested subdirectories into a single .yoda file in each subdirectory."
+    echo "If subdirectories do not have subfolders, merges all .yoda/.yoda.gz files from all subdirectories into a single .yoda file in the parent folder."
     exit 1
 fi
 
@@ -39,7 +40,37 @@ merge_dir() {
 export -f merge_dir
 
 if [ -d "$PREFIX" ]; then
-    find "$PREFIX" -mindepth 1 -maxdepth 1 -type d | xargs -n 1 -P "$NPROC" bash -c 'merge_dir "$0"'
+    has_nested_subdirs=false
+    for dir in "$PREFIX"/*; do
+        if [ -d "$dir" ] && [ "$(find "$dir" -mindepth 1 -maxdepth 1 -type d | wc -l)" -gt 0 ]; then
+            has_nested_subdirs=true
+            break
+        fi
+    done
+    
+    if [ "$has_nested_subdirs" = true ]; then
+        find "$PREFIX" -mindepth 1 -maxdepth 1 -type d | xargs -n 1 -P "$NPROC" bash -c 'merge_dir "$0"'
+    else
+        YODA=$(basename "$PREFIX")
+        OUTFILE="$PREFIX/${YODA}.yoda"
+        
+        if [ -f "$OUTFILE" ]; then
+            echo "Skipping: $OUTFILE already exists."
+        else
+            mapfile -t FILES < <(find "$PREFIX" -mindepth 2 -maxdepth 2 -type f \( -name '*.yoda' -o -name '*.yoda.gz' \))
+            
+            if [ "${#FILES[@]}" -eq 0 ]; then
+                echo "No .yoda/.yoda.gz files found in subdirectories of $PREFIX"
+            else
+                echo "Merging YODA files from all subdirectories into $OUTFILE..."
+                if command -v yodamerge >/dev/null 2>&1; then
+                    yodamerge "${FILES[@]}" -o "$OUTFILE"
+                else
+                    ~/Programs/local/bin/yodamerge "${FILES[@]}" -o "$OUTFILE"
+                fi
+            fi
+        fi
+    fi
 else
     echo "No directory named $PREFIX!"
     exit 1
