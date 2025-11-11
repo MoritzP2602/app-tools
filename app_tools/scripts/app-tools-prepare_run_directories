@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 OUTFILE="run_directories.txt"
@@ -22,8 +23,10 @@ if [ $# -lt 1 ]; then
     echo "  <folder>      : Directory in which to create or list subfolders"
     echo "  [nsubfolders] : (Optional) Number of subfolders to create in each directory"
     echo "  -o outfile    : (Optional) Output filename (default: run_directories.txt)"
-    echo "  --add         : (Optional) Append to existing file instead of overwriting"
-    echo "Creates subfolders for all subfolders in the specified directory and lists them in $OUTFILE."
+    echo "  --add         : (Optional) Append to existing outfile instead of overwriting"
+    echo "If nsubfolders is given and folder has subdirectories, creates subfolders in each and lists them in $OUTFILE."
+    echo "If nsubfolders is given and folder has no subdirectories, creates subfolders directly in folder and lists them in $OUTFILE."
+    echo "If nsubfolders is not given, lists all subdirectories of folder in $OUTFILE."
     exit 1
 fi
 
@@ -44,21 +47,38 @@ if [ -d "$PREFIX" ]; then
         width=${#n}
         (( width < 2 )) && width=2
         
+        has_subdirs=false
         for dir in "$PREFIX"/*; do
-            if [ -d "$dir" ] && [ "$(find "$dir" -mindepth 1 -maxdepth 1 -type d | wc -l)" -gt 0 ]; then
-                echo "Skipping $dir (already has subfolders)"
-                continue
-            fi
-            
             if [ -d "$dir" ]; then
-                for ((i=0; i<n; i++)); do
-                    sub_dir=$(printf "$dir/%0${width}d" "$i")
-                    mkdir "$sub_dir"
-                    echo "Created: $sub_dir"
-                    echo "$sub_dir" >> "$OUTFILE"
-                done
+                has_subdirs=true
+                break
             fi
         done
+        
+        if [ "$has_subdirs" = false ]; then
+            for ((i=0; i<n; i++)); do
+                sub_dir=$(printf "$PREFIX/%0${width}d" "$i")
+                mkdir "$sub_dir"
+                echo "Created: $sub_dir"
+                echo "$sub_dir" >> "$OUTFILE"
+            done
+        else
+            for dir in "$PREFIX"/*; do
+                if [ -d "$dir" ] && [ "$(find "$dir" -mindepth 1 -maxdepth 1 -type d | wc -l)" -gt 0 ]; then
+                    echo "Skipping $dir (already has subfolders)"
+                    continue
+                fi
+                
+                if [ -d "$dir" ]; then
+                    for ((i=0; i<n; i++)); do
+                        sub_dir=$(printf "$dir/%0${width}d" "$i")
+                        mkdir "$sub_dir"
+                        echo "Created: $sub_dir"
+                        echo "$sub_dir" >> "$OUTFILE"
+                    done
+                fi
+            done
+        fi
     fi
 else
     echo "No directory named $PREFIX!"
