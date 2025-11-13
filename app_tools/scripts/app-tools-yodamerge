@@ -2,7 +2,7 @@
 #!/bin/bash
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <folder> [nproc]"
+    echo "Usage: $0 <folder1> [<folder2> ...] [nproc]"
     echo "  <folder> : Directory containing subfolders with YODA files"
     echo "  [nproc]  : Number of parallel jobs (default: 4)"
     echo "If subdirectories have their own subfolders, merges all .yoda/.yoda.gz files from nested subdirectories into a single .yoda file in each subdirectory."
@@ -10,14 +10,30 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 
-PREFIX="${1%/}"
-NPROC="${2:-4}"
+is_number() {
+    [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+FOLDERS=()
+NPROC=4
+
+for arg in "$@"; do
+    if is_number "$arg" && [ "$arg" = "${@: -1}" ]; then
+        NPROC="$arg"
+    else
+        FOLDERS+=("$arg")
+    fi
+done
+
+if [ ${#FOLDERS[@]} -eq 0 ]; then
+    echo "Error: No folders provided!"
+    exit 1
+fi
 
 merge_dir() {
     dir="$1"
     YODA=$(basename "$dir")
     OUTFILE="$dir/${YODA}.yoda"
-
     if [ -f "$OUTFILE" ]; then
         echo "Skipping $dir: $OUTFILE already exists."
         return
@@ -39,7 +55,15 @@ merge_dir() {
 
 export -f merge_dir
 
-if [ -d "$PREFIX" ]; then
+process_folder() {
+    PREFIX="${1%/}"
+    if [ ! -d "$PREFIX" ]; then
+        echo "Warning: No directory named $PREFIX! Skipping..."
+        return 1
+    fi
+
+    echo "Processing folder: $PREFIX with $NPROC parallel jobs..."
+
     has_nested_subdirs=false
     for dir in "$PREFIX"/*; do
         if [ -d "$dir" ] && [ "$(find "$dir" -mindepth 1 -maxdepth 1 -type d | wc -l)" -gt 0 ]; then
@@ -47,7 +71,7 @@ if [ -d "$PREFIX" ]; then
             break
         fi
     done
-    
+
     if [ "$has_nested_subdirs" = true ]; then
         find "$PREFIX" -mindepth 1 -maxdepth 1 -type d | xargs -n 1 -P "$NPROC" bash -c 'merge_dir "$0"'
     else
@@ -71,7 +95,8 @@ if [ -d "$PREFIX" ]; then
             fi
         fi
     fi
-else
-    echo "No directory named $PREFIX!"
-    exit 1
-fi
+}
+
+for folder in "${FOLDERS[@]}"; do
+    process_folder "$folder"
+done
