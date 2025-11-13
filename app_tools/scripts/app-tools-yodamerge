@@ -48,7 +48,8 @@ merge_dir() {
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${FILES[@]}" -o "$OUTFILE"
         else
-            ~/Programs/local/bin/yodamerge "${FILES[@]}" -o "$OUTFILE"
+            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+            exit 1
         fi
     fi
 }
@@ -90,7 +91,8 @@ process_folder() {
                 if command -v yodamerge >/dev/null 2>&1; then
                     yodamerge "${FILES[@]}" -o "$OUTFILE"
                 else
-                    ~/Programs/local/bin/yodamerge "${FILES[@]}" -o "$OUTFILE"
+                    echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+                    exit 1
                 fi
             fi
         fi
