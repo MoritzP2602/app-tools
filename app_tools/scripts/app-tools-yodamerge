@@ -35,20 +35,20 @@ merge_dir() {
     YODA=$(basename "$dir")
     OUTFILE="$dir/${YODA}.yoda"
     if [ -f "$OUTFILE" ]; then
-        echo "Skipping $dir: $OUTFILE already exists."
+        echo "Skipping $dir: $OUTFILE already exists..."
         return
     fi
 
     mapfile -t FILES < <(find "$dir" -mindepth 2 -maxdepth 2 -type f \( -name '*.yoda' -o -name '*.yoda.gz' \))
 
     if [ "${#FILES[@]}" -eq 0 ]; then
-        echo "No .yoda.gz/.yoda files found in subdirectories of $dir"
+        echo "No .yoda.gz/.yoda files found in subdirectories of $dir."
     else
         echo "Merging YODA files into $OUTFILE..."
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${FILES[@]}" -o "$OUTFILE"
         else
-            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path!"
             exit 1
         fi
     fi
@@ -60,20 +60,20 @@ merge_flat() {
     OUTFILE="$PREFIX/${YODA}.yoda"
     
     if [ -f "$OUTFILE" ]; then
-        echo "Skipping: $OUTFILE already exists."
+        echo "Skipping: $OUTFILE already exists..."
         return
     fi
     
     mapfile -t FILES < <(find "$PREFIX" -mindepth 2 -maxdepth 2 -type f \( -name '*.yoda' -o -name '*.yoda.gz' \))
     
     if [ "${#FILES[@]}" -eq 0 ]; then
-        echo "No .yoda/.yoda.gz files found in subdirectories of $PREFIX"
+        echo "No .yoda/.yoda.gz files found in subdirectories of $PREFIX."
     else
         echo "Merging YODA files from all subdirectories into $OUTFILE..."
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${FILES[@]}" -o "$OUTFILE"
         else
-            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path!"
             exit 1
         fi
     fi

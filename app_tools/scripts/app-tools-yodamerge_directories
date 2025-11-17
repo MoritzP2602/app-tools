@@ -38,7 +38,7 @@ done
 OUTPUT_DIR="${OUTPUT_DIR%/}"
 
 if [ ${#INPUT_DIRS[@]} -lt 2 ]; then
-    echo "Error: At least two input directories are required."
+    echo "Error: At least two input directories are required!"
     exit 1
 fi
 
@@ -70,7 +70,7 @@ merge_multiple() {
     MERGED_PARAMS="$OUTPUT_DIR/$SUBDIR/params.dat"
 
     if [ -f "$OUTPUT" ]; then
-        echo "Skipping: $OUTPUT already exists"
+        echo "Skipping: $OUTPUT already exists..."
         return
     fi
 
@@ -102,7 +102,7 @@ merge_multiple() {
             if [ ! -f "$MERGED_PARAMS" ]; then
                 mkdir -p "$(dirname "$MERGED_PARAMS")"
                 cp "$reference_params" "$MERGED_PARAMS"
-                echo "Copied $reference_params to $MERGED_PARAMS"
+                echo "Copied $reference_params to $MERGED_PARAMS."
             fi
         fi
 
@@ -110,11 +110,11 @@ merge_multiple() {
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${INPUT_FILES[@]}" -o "$OUTPUT"
         else
-            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path!"
             exit 1
         fi
     else
-        echo "Skipping: One or more input files do not exist for $relpath"
+        echo "Skipping: One or more input files do not exist for $relpath..."
     fi
 }
 
@@ -129,7 +129,7 @@ export NUM_INPUT_DIRS=${#INPUT_DIRS[@]}
 all_dirs_exist=true
 for input_dir in "${INPUT_DIRS[@]}"; do
     if [ ! -d "$input_dir" ]; then
-        echo "Error: Input directory $input_dir does not exist."
+        echo "Error: Input directory $input_dir does not exist!"
         all_dirs_exist=false
     fi
 done
@@ -137,6 +137,6 @@ done
 if [ "$all_dirs_exist" = true ]; then
     find "${INPUT_DIRS[0]}" -maxdepth 2 -type f -name "*.yoda" | xargs -n 1 -P "$NPROC" bash -c 'merge_multiple "$0"'
 else
-    echo "One or more input directories do not exist."
+    echo "Error: One or more input directories do not exist!"
     exit 1
 fi

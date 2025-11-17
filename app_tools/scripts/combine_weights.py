@@ -40,7 +40,7 @@ def main():
         try:
             scale = float(args.files_and_scales[i + 1])
         except ValueError:
-            parser.error(f"Scale factor '{args.files_and_scales[i + 1]}' is not a valid number")
+            parser.error(f"Scale factor '{args.files_and_scales[i + 1]}' is not a valid number!")
         file_scale_pairs.append((file_path, scale))
     
     all_seen_keys = set()
@@ -49,7 +49,7 @@ def main():
             weights, order = read_weights(file_path, scale)
             for key in order:
                 if key in all_seen_keys:
-                    print(f"Warning: Weight '{key}' appears in multiple files")
+                    print(f"Warning: Weight '{key}' appears in multiple files.")
                 else:
                     all_seen_keys.add(key)
                 value, comment = weights[key]

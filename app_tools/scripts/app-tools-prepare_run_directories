@@ -112,4 +112,4 @@ while [ $i -le $# ]; do
     fi
 done
 
-echo "Done! Results written to $OUTFILE"
+echo "Done! Results written to $OUTFILE."

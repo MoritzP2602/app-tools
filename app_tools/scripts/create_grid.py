@@ -10,7 +10,7 @@ import itertools
 
 def write_params(param_list, templates, outdir, fname="params.dat"):
     if not param_list:
-        print("Error: No parameters to write")
+        print("Error: No parameters to write!")
         sys.exit(1)
         
     for num, params in enumerate(param_list):
@@ -62,7 +62,7 @@ def write_lookup_table(param_list, outdir):
                 f.write(f"{npad}\t" + "\t".join(values) + "\n")
 
     except IOError as e:
-        print(f"Warning: Cannot write lookup table '{table_file}': {e}")
+        print(f"Warning: Cannot write lookup table '{table_file}': {e}.")
 
 
 def sample_random(boxdef, npoints):
@@ -100,7 +100,7 @@ def sample_uniform(boxdef, npoints):
 
 def load_params_from_folders(outdir="newscan", fname="params.dat", npoints=None):
     if not os.path.exists(outdir):
-        print(f"Error: Directory '{outdir}' not found")
+        print(f"Error: Directory '{outdir}' not found!")
         sys.exit(1)
         
     param_dicts = []
@@ -125,13 +125,13 @@ def load_params_from_folders(outdir="newscan", fname="params.dat", npoints=None)
                         key, val = parts[0], parts[1]
                         params[key] = float(val)
         except (ValueError, IOError) as e:
-            print(f"Warning: Error reading {param_file}: {e}")
+            print(f"Warning: Error reading {param_file}: {e}.")
             continue
         if params:
             param_dicts.append(params)
     
     if not param_dicts:
-        print(f"Error: No valid parameter files found in '{outdir}'")
+        print(f"Error: No valid parameter files found in '{outdir}'!")
         sys.exit(1)
         
     return param_dicts
@@ -139,7 +139,7 @@ def load_params_from_folders(outdir="newscan", fname="params.dat", npoints=None)
 
 def extract_params_from_minimum_file(filepath):
     if not os.path.exists(filepath):
-        print(f"Error: File '{filepath}' not found")
+        print(f"Error: File '{filepath}' not found!")
         return {}
         
     params = {}
@@ -147,7 +147,7 @@ def extract_params_from_minimum_file(filepath):
         with open(filepath) as f:
             lines = f.readlines()
     except IOError as e:
-        print(f"Error: Cannot read file '{filepath}': {e}")
+        print(f"Error: Cannot read file '{filepath}': {e}!")
         return {}
         
     for line in lines:
@@ -172,7 +172,7 @@ def load_parameter_boundaries(boxdef):
             c = f.read(1)
             is_json = c == "{"
     except FileNotFoundError:
-        print(f"Error: Parameter file '{boxdef}' not found")
+        print(f"Error: Parameter file '{boxdef}' not found!")
         sys.exit(1)
 
     try:
@@ -184,11 +184,11 @@ def load_parameter_boundaries(boxdef):
                 lines = [line.strip().split() for line in f if line.strip() and not line.startswith("#")]
                 boundaries = {x[0]: [float(x[1]), float(x[2])] for x in lines if len(x) >= 3}
     except (json.JSONDecodeError, ValueError, IndexError) as e:
-        print(f"Error: Invalid parameter file format in '{boxdef}': {e}")
+        print(f"Error: Invalid parameter file format in '{boxdef}': {e}!")
         sys.exit(1)
     
     if not boundaries:
-        print(f"Error: No valid parameters found in '{boxdef}'")
+        print(f"Error: No valid parameters found in '{boxdef}'!")
         sys.exit(1)
     
     return boundaries
@@ -196,26 +196,26 @@ def load_parameter_boundaries(boxdef):
 
 def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="newscan"):
     if not os.path.exists(scan_dir):
-        print(f"Error: Scan directory '{scan_dir}' not found")
+        print(f"Error: Scan directory '{scan_dir}' not found!")
         sys.exit(1)
         
     defaults = None
     if defaults_path is not None:
         if not os.path.exists(defaults_path):
-            print(f"Error: Defaults file '{defaults_path}' not found")
+            print(f"Error: Defaults file '{defaults_path}' not found!")
             sys.exit(1)
         try:
             with open(defaults_path, "r") as f:
                 defaults = json.load(f)
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Error: Cannot read defaults file '{defaults_path}': {e}")
+            print(f"Error: Cannot read defaults file '{defaults_path}': {e}!")
             sys.exit(1)
 
     try:
         with open(template_path, "r") as f:
             template_content = f.read()
     except IOError as e:
-        print(f"Error: Cannot read template file '{template_path}': {e}")
+        print(f"Error: Cannot read template file '{template_path}': {e}!")
         sys.exit(1)
         
     template_name = os.path.basename(template_path)
@@ -229,17 +229,17 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
         try:
             filled = template_content.format(**defaults)
         except KeyError as e:
-            print(f"Error: Missing parameter {e} in defaults file")
+            print(f"Error: Missing parameter {e} in defaults file!")
             sys.exit(1)
         with open(out_file, "w") as f:
             f.write(filled)
-        print(f"Wrote default values to {out_file}")
+        print(f"Wrote default values to {out_file}.")
 
     tune_subdirs = sorted([d for d in os.listdir(scan_dir) 
                           if tune_tag in d and os.path.isdir(os.path.join(scan_dir, d))])
 
     if not tune_subdirs:
-        print(f"Error: No {tune_tag}* subdirectories found in '{scan_dir}'")
+        print(f"Error: No {tune_tag}* subdirectories found in '{scan_dir}'!")
         sys.exit(1)
 
     for subdir in tune_subdirs:
@@ -250,12 +250,12 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
         min_file = min_files[0]
         params = extract_params_from_minimum_file(min_file)
         if not params:
-            print(f"Warning: No parameters found in {min_file}, skipping")
+            print(f"Warning: No parameters found in {min_file}, skipping...")
             continue
 
         out_dir = os.path.join(out_base, subdir)
         if os.path.exists(out_dir):
-            print(f"Skipping {out_dir} (already exists)")
+            print(f"Skipping {out_dir} (already exists)...")
             continue
 
         os.makedirs(out_dir, exist_ok=True)
@@ -264,7 +264,7 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
         try:
             filled = template_content.format(**params)
         except KeyError as e:
-            print(f"Error: Missing parameter {e} for {min_file}")
+            print(f"Error: Missing parameter {e} for {min_file}!")
             continue
 
         with open(out_file, "w") as f:
@@ -276,14 +276,14 @@ def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infof
     boundaries = load_parameter_boundaries(boxdef)
 
     if not os.path.exists(defaults_path):
-        print(f"Error: Defaults file '{defaults_path}' not found")
+        print(f"Error: Defaults file '{defaults_path}' not found!")
         sys.exit(1)
         
     try:
         with open(defaults_path, "r") as f:
             defaults = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
-        print(f"Error: Cannot read defaults file '{defaults_path}': {e}")
+        print(f"Error: Cannot read defaults file '{defaults_path}': {e}!")
         sys.exit(1)
 
     param_order = sorted(boundaries.keys())
@@ -307,13 +307,13 @@ def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infof
                 for line in info_lines:
                     f.write(line + "\n")
         except IOError as e:
-            print(f"Warning: Cannot write info file '{infofile_path}': {e}")
+            print(f"Warning: Cannot write info file '{infofile_path}': {e}.")
 
     try:
         with open(template_path, "r") as f:
             template_content = f.read()
     except IOError as e:
-        print(f"Error: Cannot read template file '{template_path}': {e}")
+        print(f"Error: Cannot read template file '{template_path}': {e}!")
         sys.exit(1)
         
     template_name = os.path.basename(template_path)
@@ -335,16 +335,16 @@ def main():
     args = parser.parse_args()
 
     if not os.path.exists(args.parameters):
-        print(f"Error: Parameters input '{args.parameters}' not found")
+        print(f"Error: Parameters input '{args.parameters}' not found!")
         sys.exit(1)
 
     if not os.path.exists(args.template):
-        print(f"Error: Template file '{args.template}' not found")
+        print(f"Error: Template file '{args.template}' not found!")
         sys.exit(1)
 
     if args.mode in ["random", "uniform", "minmax"]:
         if os.path.exists(args.outdir):
-            print(f"Error: Output directory '{args.outdir}' already exists, please remove it or choose a different name")
+            print(f"Error: Output directory '{args.outdir}' already exists, please remove it or choose a different name!")
             sys.exit(1)
 
     is_json_txt = args.parameters.endswith(('.json', '.txt'))
@@ -362,53 +362,53 @@ def main():
 
     if args.mode == "tune":
         if not is_scan_dir:
-            print("Error: tune mode requires a scan directory with tune_* subdirectories")
+            print("Error: tune mode requires a scan directory with tune_* subdirectories!")
             sys.exit(1)
         if args.npoints is not None:
-            print("Warning: npoints argument ignored in tune mode (will process all tune directories)")
+            print("Warning: npoints argument ignored in tune mode (will process all tune directories).")
         if args.seed is not None:
-            print("Warning: --seed argument ignored in tune mode")
+            print("Warning: --seed argument ignored in tune mode.")
         if args.table:
-            print("Warning: --table argument ignored in tune mode")
+            print("Warning: --table argument ignored in tune mode.")
 
     elif args.mode == "minmax":
         if not is_json_txt:
-            print("Error: minmax mode requires a parameter file (json/txt)")
+            print("Error: minmax mode requires a parameter file (json/txt)!")
             sys.exit(1)
         if not args.default:
-            print("Error: minmax mode requires --default defaults.json file")
+            print("Error: minmax mode requires --default defaults.json file!")
             sys.exit(1)
         if args.npoints is not None:
-            print("Warning: npoints argument ignored in minmax mode (automatically set to 2 * number of parameters)")
+            print("Warning: npoints argument ignored in minmax mode (automatically set to 2 * number of parameters).")
         if args.seed is not None:
-            print("Warning: --seed argument ignored in minmax mode")
+            print("Warning: --seed argument ignored in minmax mode.")
         if args.tune_tag is not None:
-            print("Warning: --tune_tag argument ignored in minmax mode")
+            print("Warning: --tune_tag argument ignored in minmax mode.")
         if args.table:
-            print("Warning: --table argument ignored in minmax mode (automatically creates lookup table)")
+            print("Warning: --table argument ignored in minmax mode (automatically creates lookup table).")
     
     elif args.mode in ["random", "uniform"]:
         if is_newscan_dir:
             if args.npoints is not None:
-                print("Warning: npoints argument ignored when using newscan directory (will use all available parameters)")
+                print("Warning: npoints argument ignored when using newscan directory (will use all available parameters).")
             if args.seed is not None:
-                print("Warning: --seed argument ignored when using newscan directory")
+                print("Warning: --seed argument ignored when using newscan directory.")
         elif is_json_txt:
             if args.npoints is None:
-                print("Error: npoints required for random/uniform mode with parameter file")
+                print("Error: npoints required for random/uniform mode with parameter file!")
                 sys.exit(1)
             if args.npoints <= 0:
-                print("Error: Number of points must be positive")
+                print("Error: Number of points must be positive!")
                 sys.exit(1)
             if args.mode == "uniform" and args.seed is not None:
-                print("Warning: --seed argument ignored in uniform mode with parameter file")
+                print("Warning: --seed argument ignored in uniform mode with parameter file.")
         else:
-            print("Error: requires either a parameter file (json/txt) or newscan directory to sample/load parameters")
+            print("Error: requires either a parameter file (json/txt) or newscan directory to sample/load parameters!")
             sys.exit(1)
         if args.default is not None:
-            print("Warning: --default argument ignored in random/uniform mode")
+            print("Warning: --default argument ignored in random/uniform mode.")
         if args.tune_tag is not None:
-            print("Warning: --tune_tag argument ignored in random/uniform mode")
+            print("Warning: --tune_tag argument ignored in random/uniform mode.")
 
     if args.mode == "tune":
         print(f"Loading parameters from: {args.parameters}...")
@@ -441,7 +441,7 @@ def main():
         with open(args.template, "r") as f:
             template_content = f.read()
     except IOError as e:
-        print(f"Error: Cannot read template file '{args.template}': {e}")
+        print(f"Error: Cannot read template file '{args.template}': {e}!")
         sys.exit(1)
 
     template_name = os.path.basename(args.template)
