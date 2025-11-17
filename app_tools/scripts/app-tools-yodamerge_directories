@@ -110,7 +110,8 @@ merge_multiple() {
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${INPUT_FILES[@]}" -o "$OUTPUT"
         else
-            ~/Programs/local/bin/yodamerge "${INPUT_FILES[@]}" -o "$OUTPUT"
+            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+            exit 1
         fi
     else
         echo "Skipping: One or more input files do not exist for $relpath"
