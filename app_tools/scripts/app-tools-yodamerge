@@ -54,16 +54,43 @@ merge_dir() {
     fi
 }
 
-export -f merge_dir
-
-process_folder() {
+merge_flat() {
     PREFIX="${1%/}"
+    YODA=$(basename "$PREFIX")
+    OUTFILE="$PREFIX/${YODA}.yoda"
+    
+    if [ -f "$OUTFILE" ]; then
+        echo "Skipping: $OUTFILE already exists."
+        return
+    fi
+    
+    mapfile -t FILES < <(find "$PREFIX" -mindepth 2 -maxdepth 2 -type f \( -name '*.yoda' -o -name '*.yoda.gz' \))
+    
+    if [ "${#FILES[@]}" -eq 0 ]; then
+        echo "No .yoda/.yoda.gz files found in subdirectories of $PREFIX"
+    else
+        echo "Merging YODA files from all subdirectories into $OUTFILE..."
+        if command -v yodamerge >/dev/null 2>&1; then
+            yodamerge "${FILES[@]}" -o "$OUTFILE"
+        else
+            echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
+            exit 1
+        fi
+    fi
+}
+
+export -f merge_dir
+export -f merge_flat
+
+ALL_NESTED_DIRS=()
+ALL_FLAT_DIRS=()
+
+for folder in "${FOLDERS[@]}"; do
+    PREFIX="${folder%/}"
     if [ ! -d "$PREFIX" ]; then
         echo "Warning: No directory named $PREFIX! Skipping..."
-        return 1
+        continue
     fi
-
-    echo "Processing folder: $PREFIX with $NPROC parallel jobs..."
 
     has_nested_subdirs=false
     for dir in "$PREFIX"/*; do
@@ -74,31 +101,20 @@ process_folder() {
     done
 
     if [ "$has_nested_subdirs" = true ]; then
-        find "$PREFIX" -mindepth 1 -maxdepth 1 -type d | xargs -n 1 -P "$NPROC" bash -c 'merge_dir "$0"'
+        while IFS= read -r dir; do
+            ALL_NESTED_DIRS+=("$dir")
+        done < <(find "$PREFIX" -mindepth 1 -maxdepth 1 -type d)
     else
-        YODA=$(basename "$PREFIX")
-        OUTFILE="$PREFIX/${YODA}.yoda"
-        
-        if [ -f "$OUTFILE" ]; then
-            echo "Skipping: $OUTFILE already exists."
-        else
-            mapfile -t FILES < <(find "$PREFIX" -mindepth 2 -maxdepth 2 -type f \( -name '*.yoda' -o -name '*.yoda.gz' \))
-            
-            if [ "${#FILES[@]}" -eq 0 ]; then
-                echo "No .yoda/.yoda.gz files found in subdirectories of $PREFIX"
-            else
-                echo "Merging YODA files from all subdirectories into $OUTFILE..."
-                if command -v yodamerge >/dev/null 2>&1; then
-                    yodamerge "${FILES[@]}" -o "$OUTFILE"
-                else
-                    echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path."
-                    exit 1
-                fi
-            fi
-        fi
+        ALL_FLAT_DIRS+=("$PREFIX")
     fi
-}
-
-for folder in "${FOLDERS[@]}"; do
-    process_folder "$folder"
 done
+
+if [ ${#ALL_NESTED_DIRS[@]} -gt 0 ]; then
+    echo "Processing ${#ALL_NESTED_DIRS[@]} nested directories with $NPROC parallel jobs..."
+    printf "%s\n" "${ALL_NESTED_DIRS[@]}" | xargs -n 1 -P "$NPROC" bash -c 'merge_dir "$0"'
+fi
+
+if [ ${#ALL_FLAT_DIRS[@]} -gt 0 ]; then
+    echo "Processing ${#ALL_FLAT_DIRS[@]} flat directories with $NPROC parallel jobs..."
+    printf "%s\n" "${ALL_FLAT_DIRS[@]}" | xargs -n 1 -P "$NPROC" bash -c 'merge_flat "$0"'
+fi
