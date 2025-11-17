@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="app-tools",
-    version="1.0.5",
+    version="1.1.0",
     author="Moritz Pabst",
     author_email="moritz.pabst@stud.uni-goettingen.de",
     description="Tools for working with Apprentice",
