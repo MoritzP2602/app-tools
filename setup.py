@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="app-tools",
-    version="1.0.5",
+    version="1.1.0",
     author="Moritz Pabst",
     author_email="moritz.pabst@stud.uni-goettingen.de",
     description="Tools for working with Apprentice",
@@ -33,7 +33,8 @@ setup(
             "app-tools-chi_squared=app_tools.scripts.chi_squared:main",
             "app-tools-combine_weights=app_tools.scripts.combine_weights:main",
             "app-tools-create_grid=app_tools.scripts.create_grid:main",
-            "app-tools-split_build_process=app_tools.scripts.split_build_process:main",
+            "app-tools-merge_surrogates=app_tools.scripts.merge_surrogates:main",
+            "app-tools-split_weights=app_tools.scripts.split_weights:main",
             "app-tools-write_weights=app_tools.scripts.write_weights:main",
         ],
     },

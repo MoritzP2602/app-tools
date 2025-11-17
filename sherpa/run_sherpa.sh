@@ -4,6 +4,7 @@
 start_epoch=$(date +%s)
 start_time=$(date '+%Y-%m-%d %H:%M:%S')
 echo "Job started at: $start_time"
+echo ""
 
 ### --------------------------------------------------- ###
 
@@ -31,7 +32,6 @@ if [ -d "$INITIAL_RUN" ]; then
   OUTDIR=$(realpath "$DIRECTORY")
   SEED=$(od -An -N4 -tu4 < /dev/urandom | tr -d ' ')
 
-  echo ""
   echo "INITIAL_RUN : $INITIAL_RUN"
   echo "YAML        : $YAML"
   echo "YODA        : $YODA"
@@ -52,6 +52,7 @@ fi
 # Record end time
 end_epoch=$(date +%s)
 end_time=$(date '+%Y-%m-%d %H:%M:%S')
+echo ""
 echo "Job ended at:   $end_time"
 
 # Calculate elapsed time

@@ -1328,52 +1328,52 @@ def main():
         if args.weights is not None:
             weights = read_weights(args.weights)
             if args.debug:
-                print(f"Loaded weights from {args.weights}")
+                print(f"Loaded weights from {args.weights}.")
         else:
             weights = None
             if args.debug:
-                print("No weights file provided, using default weight of 1.0 for all observables/bins")
+                print("No weights file provided, using default weight of 1.0 for all observables/bins.")
             if args.weighted:
-                print("Warning: Weighted chi2 calculation is enabled, but no weights file is provided")
+                print("Warning: Weighted chi2 calculation is enabled, but no weights file is provided.")
                 args.weighted = False
                 
         if args.analyses is not None:
             analyses = read_analyses(args.analyses)
             if args.debug:
-                print(f"Loaded analyses from {args.analyses}: {sorted(analyses)}")
+                print(f"Loaded analyses from {args.analyses}: {sorted(analyses)}.")
         else:
             analyses = None
             if args.debug:
-                print("No analyses file provided, using all available analyses")
+                print("No analyses file provided, using all available analyses.")
     except FileNotFoundError as e:
-        print(f"Error: File not found: {e}")
+        print(f"Error: File not found: {e}!")
         return 1
     except Exception as e:
-        print(f"Error reading files: {e}")
+        print(f"Error reading files: {e}!")
         return 1
 
     if args.default:
         default_path = Path(args.default)
         if ('/' in args.default or '\\' in args.default) and not default_path.exists():
-            print(f"Warning: Default path {args.default} does not exist")
+            print(f"Warning: Default path {args.default} does not exist.")
             args.default = None
 
     if args.tags and args.labels:
         if len(args.tags) != len(args.labels):
-            print(f"Warning: Number of tags ({len(args.tags)}) does not match number of labels ({len(args.labels)}), falling back to filename-based labeling...")
+            print(f"Warning: Number of tags ({len(args.tags)}) does not match number of labels ({len(args.labels)}), falling back to filename-based labeling.")
         elif args.debug:
             print(f"Using tag-label mapping: {dict(zip(args.tags, args.labels))}")
 
     if args.tags and args.colors:
         if len(args.tags) != len(args.colors):
-            print(f"Warning: Number of tags ({len(args.tags)}) does not match number of colors ({len(args.colors)}), falling back to default plasma colormap...")
+            print(f"Warning: Number of tags ({len(args.tags)}) does not match number of colors ({len(args.colors)}), falling back to default plasma colormap.")
             args.colors = None
         elif args.debug:
             print(f"Using tag-color mapping: {dict(zip(args.tags, args.colors))}")
 
     if args.colors and not args.tags and len(args.yoda_files) > 1:
         if len(args.colors) != len(args.yoda_files):
-            print(f"Warning: Number of colors ({len(args.colors)}) does not match number of YODA files ({len(args.yoda_files)}), falling back to default plasma colormap...")
+            print(f"Warning: Number of colors ({len(args.colors)}) does not match number of YODA files ({len(args.yoda_files)}), falling back to default plasma colormap.")
             args.colors = None
 
     valid_bins = None
@@ -1383,7 +1383,7 @@ def main():
             if valid_bins is None:
                 return 1
         except Exception as e:
-            print(f"Error processing envelope: {e}")
+            print(f"Error processing envelope: {e}!")
             if args.debug:
                 import traceback
                 traceback.print_exc()
@@ -1395,7 +1395,7 @@ def main():
         else:
             return process_files(args, loader, weights, analyses, valid_bins, debug=args.debug)
     except Exception as e:
-        print(f"Error processing files: {e}")
+        print(f"Error processing files: {e}!")
         if args.debug:
             import traceback
             traceback.print_exc()
@@ -1407,10 +1407,10 @@ def process_envelope(args, loader, weights):
     up_file, dn_file = args.envelope
     
     if not Path(up_file).exists():
-        print(f"Error: Envelope up file '{up_file}' does not exist")
+        print(f"Error: Envelope up file '{up_file}' does not exist!")
         return None
     if not Path(dn_file).exists():
-        print(f"Error: Envelope down file '{dn_file}' does not exist")
+        print(f"Error: Envelope down file '{dn_file}' does not exist!")
         return None
     
     try:
@@ -1418,7 +1418,7 @@ def process_envelope(args, loader, weights):
         return valid_bins
         
     except Exception as e:
-        print(f"Error processing envelope: {e}")
+        print(f"Error processing envelope: {e}!")
         if args.debug:
             import traceback
             traceback.print_exc()
@@ -1434,17 +1434,17 @@ def process_default_files(default_arg, loader, weights, analyses, valid_bins=Non
     
     if default_path.is_file():
         default_files = [default_path]
-        if debug: print(f"  Using single default file: {default_path}")
+        if debug: print(f"  Using single default file: {default_path}.")
     
     elif default_path.is_dir():
         default_files = list(default_path.glob("*.yoda")) + list(default_path.glob("*.yoda.gz"))
-        if debug: print(f"  Found {len(default_files)} default files in directory")
+        if debug: print(f"  Found {len(default_files)} default files in directory.")
     
     else:
         current_dir = Path(".")
         all_yoda_files = list(current_dir.glob("*.yoda")) + list(current_dir.glob("*.yoda.gz"))
         default_files = [f for f in all_yoda_files if default_arg in f.name]
-        if debug: print(f"  Found {len(default_files)} default files matching tag '{default_arg}'")
+        if debug: print(f"  Found {len(default_files)} default files matching tag '{default_arg}'.")
     
     default_file_analyses = {}
     default_file_results = {}
@@ -1469,10 +1469,10 @@ def process_default_files(default_arg, loader, weights, analyses, valid_bins=Non
                 'bin_names': bin_names
             }
             
-            if debug: print(f"  Processed default file: {dfile.name} ({len(analyses)} analyses)")
+            if debug: print(f"  Processed default file: {dfile.name} ({len(analyses)} analyses).")
                 
         except Exception as e:
-            if debug: print(f"  Failed to process default file {dfile}: {e}")
+            if debug: print(f"  Failed to process default file {dfile}: {e}!")
             continue
     
     return default_file_analyses, default_file_results
@@ -1575,17 +1575,17 @@ def process_directory(args, loader, weights, analyses, valid_bins=None, group_by
             if default_file_analyses:
                 print(f"\nProcessed {len(default_file_analyses)} default files for potential group matching.")
             else:
-                print(f"\nWarning: No valid default files found from: {args.default}")
+                print(f"\nWarning: No valid default files found from: {args.default}.")
                 args.default = None
         except Exception as e:
-            print(f"Error processing default files: {e}")
+            print(f"Error processing default files: {e}!")
             args.default = None
 
     if args.plots:
         apply_rivet_style(use_tex_preference=args.use_tex)
         print()
         if not file_analyses:
-            print("No YODA files found for plotting.")
+            print("Warning: No YODA files found for plotting.")
             return 0
         
         if group_by_name:
@@ -1594,7 +1594,7 @@ def process_directory(args, loader, weights, analyses, valid_bins=None, group_by
             groups = group_yoda_files_by_analyses(file_analyses, debug=debug)
         
         if not groups:
-            print("No valid YODA files found for grouping and plotting.")
+            print("Warning: No valid YODA files found for grouping and plotting.")
             return 0
         
         if group_by_name:
@@ -1726,13 +1726,13 @@ def process_directory(args, loader, weights, analyses, valid_bins=None, group_by
                             print(f"  Using default file: {matching_default_file.name}")
                     else:
                         if debug:
-                            print(f"  No matching default file found for group {group_name}")
+                            print(f"  No matching default file found for group {group_name}.")
                 
                 filtered_colors = [c for c in group_colors if c is not None]
                 if len(filtered_colors) == len(group_labels):
                     final_colors = group_colors
                 elif len(filtered_colors) > 0 and len(filtered_colors) != len(group_labels):
-                    print(f"Warning: Only {len(filtered_colors)} colors specified for {len(group_labels)} files in group {group_name}, using default plasma colormap")
+                    print(f"Warning: Only {len(filtered_colors)} colors specified for {len(group_labels)} files in group {group_name}, using default plasma colormap.")
                     final_colors = None
                 else:
                     final_colors = None
@@ -1741,7 +1741,7 @@ def process_directory(args, loader, weights, analyses, valid_bins=None, group_by
                 plot_chi2_distribution(group_valid_chi2s, group_labels, final_colors, valid_chi2s_def=group_valid_chi2s_def, default_label=default_label, default_color=args.default_color, outdir=group_outdir, debug=debug)
                 create_index_html(group_outdir, group_summaries, group_chi2_plots)
             else:
-                print(f"Skipping {group_name}: no valid data to plot")
+                print(f"Warning: Skipping {group_name}: no valid data to plot...")
             print()
         create_master_index_html(args.outdir, groups, args.default_label if args.default_label else None, group_by_name)
 
@@ -1756,14 +1756,14 @@ def process_files(args, loader, weights, analyses, valid_bins=None, debug=False)
         labels = args.labels
     else:
         if args.labels:
-            print(f"Warning: Number of labels ({len(args.labels)}) does not match number of YODA files ({len(args.yoda_files)}), using file stems as labels")
+            print(f"Warning: Number of labels ({len(args.labels)}) does not match number of YODA files ({len(args.yoda_files)}), using file stems as labels.")
         labels = [Path(yoda_file).stem for yoda_file in args.yoda_files]
 
     if args.colors and len(args.colors) == len(args.yoda_files):
         colors = args.colors
     else:
         if args.colors:
-            print(f"Warning: Number of colors ({len(args.colors)}) does not match number of YODA files ({len(args.yoda_files)}), using default plasma colormap")
+            print(f"Warning: Number of colors ({len(args.colors)}) does not match number of YODA files ({len(args.yoda_files)}), using default plasma colormap.")
         colors = None
 
     all_valid_chi2s = []
@@ -1837,10 +1837,10 @@ def process_files(args, loader, weights, analyses, valid_bins=None, debug=False)
                 if args.plots:
                     chi2_plot_def = create_chi2_plot_from_obs(obs_chi2s_def)
             else:
-                print(f"Warning: No valid default files found from: {args.default}")
+                print(f"Warning: No valid default files found from: {args.default}.")
                 
         except Exception as e:
-            print(f"Error processing default files: {e}")
+            print(f"Error processing default files: {e}!")
             if debug:
                 import traceback
                 traceback.print_exc()
@@ -1848,7 +1848,7 @@ def process_files(args, loader, weights, analyses, valid_bins=None, debug=False)
     if args.plots:
         apply_rivet_style(use_tex_preference=args.use_tex)
         if not all_chi2_plots:
-            print("No valid YODA files found. Skipping plot and HTML creation")
+            print("Warning: No valid YODA files found. Skipping plot and HTML creation...")
         else:
             print("\nCreating plots...")
             plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=chi2_plot_def, default_label=args.default_label, default_color=args.default_color, outdir=args.outdir, debug=debug)

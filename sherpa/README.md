@@ -67,7 +67,7 @@ FOR MULTIPLE RUNCARDS/PROCESSES
 BUILD THE SURROGATES ON THE HPC
 
 1. Prepare weight files:
-  - Run: 'app-tools-split_build_process weights.txt n'
+  - Run: 'app-tools-split_weights weights.txt n [-o weight_files]'
   (this splits the weights file into n weight files of equal size, saved in the weight_files directory)
 
 2. Prepare job submission (condor):
@@ -75,5 +75,5 @@ BUILD THE SURROGATES ON THE HPC
   - In the directory that contains newscan and weight_files, run: 'condor_submit build.jdf'
   
 3. Combine surrogates:
-  - Run: 'app-tools-split_build_process app_X_Y n'
-  (this will combine the n partial surrogates into a single .json file)
+  - Run: 'app-tools-merge_surrogates app_X_Y [-o app.json]'
+  (this will combine all partial surrogates in the directory into a single .json file)

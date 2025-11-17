@@ -38,7 +38,7 @@ def main():
     try:
         yd = yoda.readYODA(args.yoda_file)
     except Exception as e:
-        print(f"Error: Could not read YODA file {args.yoda_file}: {e}")
+        print(f"Error: Could not read YODA file {args.yoda_file}: {e}!")
         return
     
     observables = []
@@ -79,7 +79,7 @@ def main():
             continue
     
     if ignored_count > 0:
-        print(f"Ignored {ignored_count} observables (no Rivet reference available)")
+        print(f"Warning: Ignored {ignored_count} observables (no Rivet reference available).")
 
     total_bins = sum(bins for _, bins in observables)
 

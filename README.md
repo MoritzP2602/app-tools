@@ -40,7 +40,8 @@ This package automatically installs:
 - `app-tools-chi_squared`: Compute chi-squared statistics from YODA files
 - `app-tools-combine_weights`: Scale and combine weight files
 - `app-tools-create_grid`: Generate parameter grids (enhanced version of app-sample)
-- `app-tools-split_build_process`: Split the build process (used in combination with app-build)
+- `app-tools-merge_surrogates`: Merge multiple surrogate JSON files
+- `app-tools-split_weights`: Split weight files for parallel processing
 - `app-tools-write_weights`: Extract observables from YODA files and write weights file
 
 ### Shell Scripts:
@@ -62,7 +63,7 @@ app-tools-chi_squared data1.yoda [data2.yoda ...] [--weights weights.txt] [--lab
 Combine weight files:
 ```bash
 # combine and scale multiple weight files
-app-tools-combine_weights weight_file1.txt factor1 [weight_file2.txt factor2 ...] -o combined.txt
+app-tools-combine_weights weight_file1.txt factor1 [weight_file2.txt factor2 ...] [-o outfile]
 ```
 Create parameter grid:
 ```bash
@@ -79,30 +80,33 @@ app-tools-create_grid directory template.yaml --default default.json --mode minm
 ```
 Prepare run directories:
 ```bash
-# creates n subfolders in each subfolder of a specified directory and writes path to new subfolders in run_directories.txt file (skips subfolders, that already have subfolders)
-app-tools-prepare_run_directory directory/ n
+# creates n subfolders in each subfolder of the specified directory and writes path to new subfolders in run_directories.txt file (skips subfolders, that already have subfolders), if the directory does not contain subfolders, it will create the n subfolders in the directory itself, if number n is not specified, it will just list all subfolders in the directory
+app-tools-prepare_run_directory directory1/ [n1] [directory2/ [n2] ...] [-o outfile]
 ```
 Merge YODA files:
 ```bash
-# uses yodamerge to merge all .yoda (and .yoda.gz) files in every subfolder of a specified directory
-app-tools-yodamerge directory/ [nproc]
+# uses yodamerge to merge all .yoda (and .yoda.gz) files in every subfolder of a specified directory (also supports directories with a flat structure)
+app-tools-yodamerge directory1/ [directory2/ ...] [nproc]
 ```
 Merge different directories:
 ```bash
 # uses yodamerge to merge the .yoda (and .yoda.gz) files in the subfolders with the same name (and params.dat file) from all input directories (e.g. to merge multiple newscan directories)
-app-tools-yodamerge_directories inputdir1/ inputdir2/ [inputdir3/ ...] outdir/ [nproc]
+app-tools-yodamerge_directories inputdir1/ inputdir2/ [inputdir3/ ...] outdir/ [nproc] [--no_params]
 ```
 Extract observables and write weights:
 ```bash
 # creates a new weights file from specified .yoda file (this file can be used for app-build)
-app-tools-write_weights file.yoda -o weights.txt
+app-tools-write_weights file.yoda [-o outfile]
 ```
-Split the build process (used in combination with app-build):
+Merge surrogate JSON files:
 ```bash
-# splits a weight file in n files saved in the directory weight_files and writes the path to each file in weight_files.txt
-app-tools-split_build_process weights.txt n
-# merges n .json files in a specified input directory in the file directory.json
-app-tools-split_build_process directory/ n
+# merges all numbered .json files in a specified input directory into a single file
+app-tools-merge_surrogates directory/ [--keep_dir] [-o outfile]
+```
+Split weight files for parallel processing:
+```bash
+# splits a weight file into n files saved in the directory weight_files and writes the path to each file in weight_files.txt (outdir.txt)
+app-tools-split_weights weights.txt n [-o outdir]
 ```
 
 ## Troubleshooting
