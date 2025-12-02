@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 OUTFILE="run_directories.txt"

@@ -1,10 +1,23 @@
-
 #!/bin/bash
 
+REMOVE_SUBDIRS=false
+POSITIONAL=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --rm)
+            REMOVE_SUBDIRS=true; shift ;;
+        *) POSITIONAL+=("$1"); shift ;;
+    esac
+done
+
+set -- "${POSITIONAL[@]}"
+
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <folder1> [<folder2> ...] [nproc]"
+    echo "Usage: $0 [--rm] <folder1> [<folder2> ...] [nproc]"
     echo "  <folder> : Directory containing subfolders with YODA files"
     echo "  [nproc]  : Number of parallel jobs (default: 4)"
+    echo "  --rm     : (Optional) Remove merged subdirectories after successful merge to free space"
     echo "If subdirectories have their own subfolders, merges all .yoda/.yoda.gz files from nested subdirectories into a single .yoda file in each subdirectory."
     echo "If subdirectories do not have subfolders, merges all .yoda/.yoda.gz files from all subdirectories into a single .yoda file in the parent folder."
     exit 1
@@ -47,6 +60,14 @@ merge_dir() {
         echo "Merging YODA files into $OUTFILE..."
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${FILES[@]}" -o "$OUTFILE"
+            if [ "$REMOVE_SUBDIRS" = true ] && [ -f "$OUTFILE" ]; then
+                for subdir in "$dir"/*; do
+                    if [ -d "$subdir" ]; then
+                        echo "Removing $subdir..."
+                        rm -rf "$subdir"
+                    fi
+                done
+            fi
         else
             echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path!"
             exit 1
@@ -72,6 +93,14 @@ merge_flat() {
         echo "Merging YODA files from all subdirectories into $OUTFILE..."
         if command -v yodamerge >/dev/null 2>&1; then
             yodamerge "${FILES[@]}" -o "$OUTFILE"
+            if [ "$REMOVE_SUBDIRS" = true ] && [ -f "$OUTFILE" ]; then
+                for subdir in "$PREFIX"/*; do
+                    if [ -d "$subdir" ]; then
+                        echo "Removing $subdir..."
+                        rm -rf "$subdir"
+                    fi
+                done
+            fi
         else
             echo "Error: yodamerge command not found. Please install YODA or adjust the script to point to the correct path!"
             exit 1
@@ -81,6 +110,7 @@ merge_flat() {
 
 export -f merge_dir
 export -f merge_flat
+export REMOVE_SUBDIRS
 
 ALL_NESTED_DIRS=()
 ALL_FLAT_DIRS=()
