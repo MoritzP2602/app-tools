@@ -20,13 +20,13 @@ FOR A SINGLE RUNCARD/PROCESS
   (initializes processes and computes ME)
 
 4. Prepare job submission (condor):
-  - Run: 'app-tools-prepare_run_directories newscan n'
+  - Run: 'app-tools-prepare_runs newscan n'
   (this generates n subfolders for each folder in newscan)
   - Run: 'mkdir ErrLogOut' (directory for the HPC log, error and output files of each job)
   - In the directory that contains newscan, run: 'condor_submit sherpa.jdf' (this submits N * n jobs on the HPC)
 
 5. Combine .yoda files:
-  - Run: 'app-tools-yodamerge newscan'
+  - Run: 'app-tools-yodamerge_runs newscan'
   (this combines the n .yoda files into one .yoda file using yodamerge)
 
 6. Prepare reference data:

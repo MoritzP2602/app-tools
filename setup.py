@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="app-tools",
-    version="1.1.0",
+    version="1.1.1",
     author="Moritz Pabst",
     author_email="moritz.pabst@stud.uni-goettingen.de",
     description="Tools for working with Apprentice",
@@ -39,8 +39,8 @@ setup(
         ],
     },
     scripts=[
-        "app_tools/scripts/app-tools-prepare_run_directories",
-        "app_tools/scripts/app-tools-yodamerge",
+        "app_tools/scripts/app-tools-prepare_runs",
+        "app_tools/scripts/app-tools-yodamerge_runs",
         "app_tools/scripts/app-tools-yodamerge_directories",
     ],
     include_package_data=True,
