@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 OUTFILE="run_directories.txt"
@@ -113,3 +112,8 @@ while [ $i -le $# ]; do
 done
 
 echo "Done! Results written to $OUTFILE."
+
+if [ -f "$OUTFILE" ]; then
+    total_runs=$(wc -l < "$OUTFILE")
+    echo "Total number of runs: $total_runs"
+fi

@@ -34,7 +34,6 @@ def write_params(param_list, templates, outdir, fname="params.dat"):
 
 
 def write_lookup_table(param_list, outdir):
-    """Write a lookup table with folder indices and parameter values."""
     if not param_list:
         return
 
