@@ -193,7 +193,7 @@ def load_parameter_boundaries(boxdef):
     return boundaries
 
 
-def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="newscan"):
+def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="newscan", precision=3):
     if not os.path.exists(scan_dir):
         print(f"Error: Scan directory '{scan_dir}' not found!")
         sys.exit(1)
@@ -244,13 +244,22 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
     for subdir in tune_subdirs:
         full_subdir = os.path.join(scan_dir, subdir)
         min_files = glob.glob(os.path.join(full_subdir, "minimum_*.txt"))
-        if not min_files:
+        tune_dat = os.path.join(full_subdir, "tune.dat")
+        
+        if min_files:
+            min_file = min_files[0]
+        elif os.path.exists(tune_dat):
+            min_file = tune_dat
+        else:
             continue
-        min_file = min_files[0]
+            
         params = extract_params_from_minimum_file(min_file)
         if not params:
             print(f"Warning: No parameters found in {min_file}, skipping...")
             continue
+        
+        if precision is not None:
+            params = {k: round(v, precision) for k, v in params.items()}
 
         out_dir = os.path.join(out_base, subdir)
         if os.path.exists(out_dir):
@@ -330,6 +339,7 @@ def main():
     parser.add_argument("-d", "--default", help="Defaults.json file (for tune/minmax mode)")
     parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
     parser.add_argument("--tune_tag", help="Prefix for tune directories (default: tune_)")
+    parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode (default: 3)")
     parser.add_argument("--table", action="store_true", help="Create a lookup table (params.dat) with folder indices and parameter values (only for random/uniform modes)")
     args = parser.parse_args()
 
@@ -413,7 +423,7 @@ def main():
         print(f"Loading parameters from: {args.parameters}...")
         if args.tune_tag is None:
             args.tune_tag = "tune_"
-        tune_mode(args.parameters, args.template, args.tune_tag, args.default, args.outdir)
+        tune_mode(args.parameters, args.template, args.tune_tag, args.default, args.outdir, args.precision)
         return
 
     if args.mode == "minmax":
