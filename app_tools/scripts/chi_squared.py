@@ -792,6 +792,15 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
             fig, (ax_top, ax_bottom) = plt.subplots(
                 2, 1, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
 
+            if chi2_values_def is not None:
+                chunk_chi2_values_def = chi2_values_def[start:end]
+                if default_color == "black":
+                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', color=default_color, linestyle='', label=default_label, alpha=0.6)
+                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color=default_color, alpha=0.3)
+                else:
+                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', color=default_color, linestyle='', label=default_label)
+                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color=default_color, alpha=0.5)
+
             for i, (bin_data, label) in enumerate(zip(tune_bin_data, labels)):
                 if not bin_data:
                     continue
@@ -807,15 +816,6 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
                 ax_top.plot(valid_bin_ids, valid_chi2s, marker='o', linestyle='', label=label, color=colors[i])
                 if len(valid_chi2s) > 1:
                     ax_top.plot(valid_bin_ids, valid_chi2s, linestyle='-', alpha=0.5, color=colors[i])
-                    
-            if chi2_values_def is not None:
-                chunk_chi2_values_def = chi2_values_def[start:end]
-                if default_color == "black":
-                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', color=default_color, linestyle='', label=default_label, alpha=0.6)
-                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color=default_color, alpha=0.3)
-                else:
-                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, marker='o', color=default_color, linestyle='', label=default_label)
-                    ax_top.plot(chunk_bin_ids, chunk_chi2_values_def, linestyle='-', color=default_color, alpha=0.5)
 
             ax_top.set_ylabel(r'$\chi^2 / \mathrm{ndf}$')
             if n_chunks == 1:
@@ -903,14 +903,19 @@ def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None
     
     filtered_chi2s = []
     filtered_labels = []
+    filtered_colors = []
     all_logs = []
     
-    for chi2s, label in zip(all_valid_chi2s, labels):
+    for idx, (chi2s, label) in enumerate(zip(all_valid_chi2s, labels)):
         if len(chi2s) > 0:
             valid_chi2s = [x for x in chi2s if x > 0 and np.isfinite(x)]
             if len(valid_chi2s) > 0:
                 filtered_chi2s.append(valid_chi2s)
                 filtered_labels.append(label)
+                if colors is not None and idx < len(colors):
+                    filtered_colors.append(colors[idx])
+                else:
+                    filtered_colors.append(None)
                 all_logs.extend(np.log10(valid_chi2s))
             else:
                 if debug: print(f"Warning: No valid chi2 values for {label}, skipping from distribution plot")
@@ -953,15 +958,14 @@ def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None
     if n_plots == 1:
         axes = [axes]
 
-    if colors is None:
+    if any(c is None for c in filtered_colors):
         plasma = plt.get_cmap('plasma')
-        colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
-    elif len(colors) < len(filtered_labels):
-        plasma = plt.get_cmap('plasma')
-        colors = [plasma(0.2 + 0.6 * i / max(1, len(labels)-1)) for i in range(len(labels))]
+        final_colors = [plasma(0.2 + 0.6 * i / max(1, len(filtered_labels)-1)) for i in range(len(filtered_labels))]
+    else:
+        final_colors = filtered_colors
 
     plot_idx = 0
-    for chi2s, label, color in zip(filtered_chi2s, filtered_labels, colors):
+    for chi2s, label, color in zip(filtered_chi2s, filtered_labels, final_colors):
         hist, bin_edges = np.histogram(np.log10(chi2s), bins=bins, density=True)
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         ax = axes[plot_idx]
@@ -1275,7 +1279,7 @@ def apply_rivet_style(use_tex_preference=False):
         "axes.linewidth": 0.3,
         "xaxis.labellocation": "right",
         "lines.markersize": 1.8,
-        "lines.linewidth": 1.0,
+        "lines.linewidth": 1.1,
         "axes.formatter.min_exponent": 1,
     })
     mpl.rcParams.update({
