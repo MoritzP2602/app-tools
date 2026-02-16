@@ -46,8 +46,6 @@ This package automatically installs:
 - `app-tools-write_weights`: Extract observables from YODA files and write weights file
 
 ### Shell Scripts:
-- `app-tools-prepare_runs`: Create and manage run directories
-- `app-tools-yodamerge_runs`: Merge YODA files in directories
 - `app-tools-yodamerge_directories`: Merge multiple (newscan) directories
 
 ## Usage
@@ -80,16 +78,6 @@ app-tools-create_grid scan_directory/ template.yaml --mode tune [--default defau
 app-tools-create_grid directory template.yaml --default default.json --mode minmax [-o outdir]
 # create an additional reweighting runcard, with nominal parameters specified in nominal.json, this also creates a variations.dat file that can be used in app-tools-split_reweighted_runs
 app-tools-create_grid parameter.json template.yaml npoints [--reweighting nominal.json] [--seed s] [--table] [-o outdir] (--mode random)
-```
-Prepare run directories:
-```bash
-# creates n subfolders in each subfolder of the specified directory and writes path to new subfolders in run_directories.txt file (skips subfolders, that already have subfolders), if the directory does not contain subfolders, it will create the n subfolders in the directory itself, if number n is not specified, it will just list all subfolders in the directory
-app-tools-prepare_runs directory1/ [n1] [directory2/ [n2] ...] [-o outfile] [--add]
-```
-Merge YODA files:
-```bash
-# uses yodamerge to merge all .yoda (and .yoda.gz) files in every subfolder of a specified directory (also supports directories with a flat structure)
-app-tools-yodamerge_runs directory1/ [directory2/ ...] [nproc] [--rm]
 ```
 Merge different directories:
 ```bash
