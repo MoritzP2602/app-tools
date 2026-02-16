@@ -41,6 +41,7 @@ This package automatically installs:
 - `app-tools-combine_weights`: Scale and combine weight files
 - `app-tools-create_grid`: Generate parameter grids (enhanced version of app-sample)
 - `app-tools-merge_surrogates`: Merge multiple surrogate JSON files
+- `app-tools-split_reweighted_runs`: Split variations in YODA files in separate files
 - `app-tools-split_weights`: Split weight files for parallel processing
 - `app-tools-write_weights`: Extract observables from YODA files and write weights file
 
@@ -77,6 +78,8 @@ app-tools-create_grid parameter.json template.yaml n --mode uniform [--table] [-
 app-tools-create_grid scan_directory/ template.yaml --mode tune [--default default.json] [--tune_tag foldertag] [-o outdir]
 # create grid with min/max values of the parameters, used to ensure a suitable parameter range
 app-tools-create_grid directory template.yaml --default default.json --mode minmax [-o outdir]
+# create an additional reweighting runcard, with nominal parameters specified in nominal.json, this also creates a variations.dat file that can be used in app-tools-split_reweighted_runs
+app-tools-create_grid parameter.json template.yaml npoints [--reweighting nominal.json] [--seed s] [--table] [-o outdir] (--mode random)
 ```
 Prepare run directories:
 ```bash
@@ -107,6 +110,11 @@ Split weight files for parallel processing:
 ```bash
 # splits a weight file into n files saved in the directory weight_files and writes the path to each file in weight_files.txt (outdir.txt)
 app-tools-split_weights weights.txt n [-o outdir]
+```
+Split variations in YODA files:
+```bash
+# splits the variations in a .yoda file into separate files, each containing only one variation, this allows the usage of the Apprentice script app-build, where each variations is treated as a separate run
+app-tools-split_reweighted_runs inputdir variation_pattern [--outdir outdir] [--variations variations.dat]
 ```
 
 ## Troubleshooting
