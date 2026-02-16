@@ -341,6 +341,7 @@ def main():
     parser.add_argument("--tune_tag", help="Prefix for tune directories (default: tune_)")
     parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode (default: 3)")
     parser.add_argument("--table", action="store_true", help="Create a lookup table (params.dat) with folder indices and parameter values (only for random/uniform modes)")
+    parser.add_argument("--reweighting", help="Nominal parameter set for reweighting, creates an additional runcard for a reweighted run")
     args = parser.parse_args()
 
     if not os.path.exists(args.parameters):
@@ -456,7 +457,69 @@ def main():
     template_name = os.path.basename(args.template)
     templates = {template_name: template_content}
     write_params(param_list, templates, args.outdir)
-    
+
+    if args.reweighting:
+        def load_nominal_parameter_values(nominal_path):
+            try:
+                with open(nominal_path) as f:
+                    c = f.read(1)
+                    is_json = c == "{"
+            except FileNotFoundError:
+                print(f"Error: Parameter file '{nominal_path}' not found!")
+                sys.exit(1)
+            try:
+                if is_json:
+                    with open(nominal_path) as f:
+                        nominal_values = json.load(f)
+                else:
+                    with open(nominal_path) as f:
+                        lines = [line.strip().split() for line in f if line.strip() and not line.startswith("#")]
+                        nominal_values = {x[0]: float(x[1]) for x in lines if len(x) == 3}
+            except (json.JSONDecodeError, ValueError, IndexError) as e:
+                print(f"Error: Invalid parameter file format in '{nominal_path}': {e}!")
+                sys.exit(1)
+            if not nominal_values:
+                print(f"Error: No valid parameters found in '{nominal_path}'!")
+                sys.exit(1)
+            return nominal_values
+        
+        def transform_params(param_list, nominal_values):
+            transformed_dictionary = {}
+            for name in param_list[0].keys():
+                if name == "N": continue
+                transformed_dictionary[name] = [nominal_values[name]]
+            for params in param_list:
+                for name, value in params.items():
+                    if name == "N": continue
+                    transformed_dictionary[name].append(value)
+            return transformed_dictionary
+        
+        def write_reweighting_runcard(param_dict, templates, outdir="newscan-reweighting"):
+            if not param_dict:
+                print("Error: No parameters to write!")
+                sys.exit(1)
+
+            if not os.path.exists(outdir):
+                os.makedirs(outdir)
+
+            for template_name, template_content in templates.items():
+                txt = template_content.format(**param_dict)
+                tname = os.path.join(outdir, template_name)
+                with open(tname, "w") as tf:
+                    tf.write(txt)
+        
+        def write_variations_file(param_dict, outdir="newscan-reweighting"):
+            variations_file = os.path.join(outdir, "variations.dat")
+            with open(variations_file, "w") as f:
+                for param_name, values in param_dict.items():
+                    values_str = ", ".join([f"{v:e}" for v in values])
+                    f.write(f"{param_name} [{values_str}]\n")
+        
+        nominal_values = load_nominal_parameter_values(args.reweighting)
+        reweighting_param_dict = transform_params(param_list, nominal_values)
+        write_reweighting_runcard(reweighting_param_dict, templates)
+        write_variations_file(reweighting_param_dict)
+
     if args.table:
         write_lookup_table(param_list, args.outdir)
 

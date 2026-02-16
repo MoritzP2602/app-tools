@@ -30,6 +30,7 @@ def main():
     parser = argparse.ArgumentParser(description="Extract observables from YODA file and write weights")
     parser.add_argument("yoda_file", help="YODA file to process")
     parser.add_argument("-o", "--output", default="weights.txt", help="Output weights file name (default: weights.txt)")
+    parser.add_argument("--bins", action="store_true", help="List all bins of all observables instead of just observables")
     
     args = parser.parse_args()
 
@@ -84,8 +85,13 @@ def main():
     total_bins = sum(bins for _, bins in observables)
 
     with open(args.output, "w") as out:
-        for path, bins in observables:
-            out.write(f"{path} 1.0  # bins: {bins}\n")
+        if args.bins:
+            for path, bins in observables:
+                for bin_idx in range(bins):
+                    out.write(f"{path}#{bin_idx} 1.0  # bin {bin_idx + 1}\n")
+        else:
+            for path, bins in observables:
+                out.write(f"{path} 1.0  # bins: {bins}\n")
 
     print(f"Total number of observables: {len(observables)}")
     print(f"Total number of bins: {total_bins}")
