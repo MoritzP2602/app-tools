@@ -1,9 +1,15 @@
-# App Tools
+<div align="center">
+  <img src="logo.png" width="400"/>
+</div>
+<br>
 
-A collection of tools for working with apprentice, a program for tuning MC event generators (DOI: 10.1051/epjconf/202125103060, GitHub repository https://github.com/HEPonHPC/apprentice).
+
+# app-tools
+
+A collection of tools for working with Apprentice, a program for tuning MC event generators (DOI: 10.1051/epjconf/202125103060, GitHub repository https://github.com/HEPonHPC/apprentice).
 These additional tools provide functionalities such as improved grid generation, merging multiple newscan directories, and performing chi-squared analyses.
 
-Several of the tools are specifically tailored to streamline the tuning of multiple event types within apprentice, e.g. a combined tune on Drell-Yan and dijet data.
+Several of the tools are specifically tailored to streamline the tuning of multiple event types within Apprentice, e.g. a combined tune on Drell-Yan and dijet data.
 
 ## Prerequisites
 
