@@ -51,9 +51,6 @@ This package automatically installs:
 - `app-tools-split_weights`: Split weight files for parallel processing
 - `app-tools-write_weights`: Extract observables from YODA files and write weights file
 
-### Shell Scripts:
-- `app-tools-yodamerge_directories`: Merge multiple (newscan) directories
-
 ## Usage
 
 Chi-squared analysis: 
@@ -84,11 +81,6 @@ app-tools-create_grid scan_directory/ template.yaml --mode tune [--default defau
 app-tools-create_grid directory template.yaml --default default.json --mode minmax [-o outdir]
 # create an additional reweighting runcard, with nominal parameters specified in nominal.json, this also creates a variations.dat file that can be used in app-tools-split_reweighted_runs
 app-tools-create_grid parameter.json template.yaml npoints [--reweighting nominal.json] [--seed s] [--table] [-o outdir] (--mode random)
-```
-Merge different directories:
-```bash
-# uses yodamerge to merge the .yoda (and .yoda.gz) files in the subfolders with the same name (and params.dat file) from all input directories (e.g. to merge multiple newscan directories)
-app-tools-yodamerge_directories inputdir1/ inputdir2/ [inputdir3/ ...] outdir/ [nproc] [--no_params]
 ```
 Extract observables and write weights:
 ```bash

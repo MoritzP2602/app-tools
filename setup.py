@@ -39,8 +39,5 @@ setup(
             "app-tools-write_weights=app_tools.scripts.write_weights:main",
         ],
     },
-    scripts=[
-        "app_tools/scripts/app-tools-yodamerge_directories",
-    ],
     include_package_data=True,
 )
