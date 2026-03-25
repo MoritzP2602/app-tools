@@ -995,7 +995,7 @@ This script supports multiple input types:
 
 For random/uniform mode, if a JSON parameter file is provided, these two features are supported:
   Dynamic bounds: Parameter bounds can depend on other parameters
-    E.g. "paramA": ["paramB", 2.0] means paramA's bounds are [paramB, 2.0])
+    E.g. "paramA": ["paramB", 2.0] means paramA's bounds are [paramB, 2.0]
   Sectorized parameters: Define sampling sectors for specific parameters
     E.g. "paramC": [0.0, 1.0, 2.0] defines 2 sectors for paramC: [0.0, 1.0] and [1.0, 2.0]
 
