@@ -8,10 +8,10 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="app-tools",
-    version="1.1.2",
+    version="2.0.0",
     author="Moritz Pabst",
     author_email="moritz.pabst@stud.uni-goettingen.de",
-    description="Tools for working with Apprentice",
+    description="Additional tools for working with the Apprentice tuning tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/MoritzP2602/app-tools",

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "app-tools"
-version = "1.1.2"
-description = "Tools for working with Apprentice"
+version = "2.0.0"
+description = "Additional tools for working with the Apprentice tuning tool"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
