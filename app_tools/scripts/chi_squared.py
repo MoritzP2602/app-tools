@@ -748,6 +748,8 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
     if chi2_plot_def:
         all_analyses.update(chi2_plot_def.keys())
 
+    chi2_data_for_file = []
+
     for analysis_name in sorted(all_analyses):
         tune_bin_data = []
         tune_bin_ids = []
@@ -781,6 +783,19 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
         if chi2_plot_def and analysis_name in chi2_plot_def:
             def_dict = dict(chi2_plot_def[analysis_name])
             chi2_values_def = [def_dict.get(bid, np.nan) for bid in bin_ids]
+        
+        for idx, (bin_data, label) in enumerate(zip(tune_bin_data, labels)):
+            for bid in bin_ids:
+                if bid in bin_data:
+                    observable_name = f"{analysis_name}/{bid}"
+                    chi2_value = bin_data[bid]
+                    chi2_data_for_file.append((label, observable_name, chi2_value))
+        
+        if chi2_values_def is not None:
+            for bid, chi2_val in zip(bin_ids, chi2_values_def):
+                if not np.isnan(chi2_val):
+                    observable_name = f"{analysis_name}/{bid}"
+                    chi2_data_for_file.append((default_label, observable_name, chi2_val))
 
         chunk_size = 100
         n_chunks = (n_bins + chunk_size - 1) // chunk_size
@@ -893,6 +908,14 @@ def plot_chi2_per_analysis(all_chi2_plots, labels, colors, chi2_plot_def=None, d
             plt.close(fig)
 
             print(f"Plot for {analysis_name} (part {chunk_idx + 1}/{n_chunks}) saved to {fname}/png" if n_chunks > 1 else f"Plot for {analysis_name} saved to {fname}/png")
+    
+    if chi2_data_for_file:
+        chi2_dat_path = os.path.join(outdir, "chi2.dat")
+        with open(chi2_dat_path, 'w') as f:
+            f.write("# label\tobservable\tchi2/ndf\n")
+            for label, observable, chi2_val in chi2_data_for_file:
+                f.write(f"{label}\t{observable}\t{chi2_val:.6f}\n")
+        print(f"Chi2 data written to {chi2_dat_path}")
 
 
 def plot_chi2_distribution(all_valid_chi2s, labels, colors, valid_chi2s_def=None, default_label="default", default_color="black", outdir="chi2_plots", debug=False):

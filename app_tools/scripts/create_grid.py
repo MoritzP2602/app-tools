@@ -70,8 +70,34 @@ def sample_random(boxdef, npoints):
     xmin = [boundaries[x][0] for x in param_order]
     xmax = [boundaries[x][1] for x in param_order]
 
-    random_points = np.random.uniform(low=xmin, high=xmax, size=(npoints, len(xmin)))
-    return [dict(zip(param_order, x)) for x in random_points]
+    has_matter_radius_constraint = (
+        "MATTER_RADIUS_1" in boundaries and "MATTER_RADIUS_2" in boundaries
+    )
+
+    if not has_matter_radius_constraint:
+        random_points = np.random.uniform(low=xmin, high=xmax, size=(npoints, len(xmin)))
+        return [dict(zip(param_order, x)) for x in random_points]
+
+    mr1_min, mr1_max = boundaries["MATTER_RADIUS_1"]
+    mr2_min, mr2_max = boundaries["MATTER_RADIUS_2"]
+
+    if mr1_min > mr2_max:
+        print("Error: Incompatible bounds for MATTER_RADIUS_1 and MATTER_RADIUS_2 (cannot satisfy MATTER_RADIUS_1 <= MATTER_RADIUS_2)!")
+        sys.exit(1)
+
+    samples = []
+    while len(samples) < npoints:
+        point = np.random.uniform(low=xmin, high=xmax)
+        sampled = dict(zip(param_order, point))
+
+        sampled["MATTER_RADIUS_1"] = np.random.uniform(mr1_min, mr1_max)
+        if sampled["MATTER_RADIUS_1"] > mr2_max:
+            continue
+        mr2_low = max(mr2_min, sampled["MATTER_RADIUS_1"])
+        sampled["MATTER_RADIUS_2"] = np.random.uniform(mr2_low, mr2_max)
+        samples.append(sampled)
+
+    return samples
 
 
 def sample_uniform(boxdef, npoints):
@@ -84,17 +110,38 @@ def sample_uniform(boxdef, npoints):
     ndim = len(param_order)
     n_per_dim = int(np.ceil(npoints ** (1/ndim)))
 
-    grids = []
-    for lo, hi in zip(xmin, xmax):
-        if n_per_dim == 1:
-            grids.append([lo])
-        else:
-            step = (hi - lo) / (n_per_dim - 1)
-            grids.append([lo + i * step for i in range(n_per_dim)])
+    has_matter_radius_constraint = (
+        "MATTER_RADIUS_1" in boundaries and "MATTER_RADIUS_2" in boundaries
+    )
 
-    all_points = list(itertools.product(*grids))
-    all_points = all_points[:npoints]
-    return [dict(zip(param_order, x)) for x in all_points]
+    if has_matter_radius_constraint:
+        mr1_min, mr1_max = boundaries["MATTER_RADIUS_1"]
+        mr2_min, mr2_max = boundaries["MATTER_RADIUS_2"]
+        if mr1_min > mr2_max:
+            print("Error: Incompatible bounds for MATTER_RADIUS_1 and MATTER_RADIUS_2 (cannot satisfy MATTER_RADIUS_1 <= MATTER_RADIUS_2)!")
+            sys.exit(1)
+
+    mr1_idx = param_order.index("MATTER_RADIUS_1") if has_matter_radius_constraint else None
+    mr2_idx = param_order.index("MATTER_RADIUS_2") if has_matter_radius_constraint else None
+
+    while True:
+        grids = []
+        for lo, hi in zip(xmin, xmax):
+            if n_per_dim == 1:
+                grids.append([lo])
+            else:
+                step = (hi - lo) / (n_per_dim - 1)
+                grids.append([lo + i * step for i in range(n_per_dim)])
+
+        all_points = list(itertools.product(*grids))
+        if has_matter_radius_constraint:
+            all_points = [p for p in all_points if p[mr1_idx] <= p[mr2_idx]]
+
+        if len(all_points) >= npoints:
+            all_points = all_points[:npoints]
+            return [dict(zip(param_order, x)) for x in all_points]
+
+        n_per_dim += 1
 
 
 def load_params_from_folders(outdir="newscan", fname="params.dat", npoints=None):
