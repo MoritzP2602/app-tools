@@ -993,19 +993,14 @@ This script supports multiple input types:
   minmax:
     - Parameter file (.json or .txt): Creates min/max points for each parameter independently.
 
-Use --table to create a lookup table for all generated points (in random/uniform mode).
-Use --reweighting nominal.json to generate reweighting runcards.
-
 For random/uniform mode, if a JSON parameter file is provided, these two features are supported:
   Dynamic bounds: Parameter bounds can depend on other parameters
     E.g. "paramA": ["paramB", 2.0] means paramA's bounds are [paramB, 2.0])
   Sectorized parameters: Define sampling sectors for specific parameters
     E.g. "paramC": [0.0, 1.0, 2.0] defines 2 sectors for paramC: [0.0, 1.0] and [1.0, 2.0]
-      - Each sector contains the same number of points.
-      - Sectors are defined by the Cartesian product of all sectorized parameters' intervals.
-      - Create separate reweighting runcards for each sector with --reweighting.
-        - Nominal values can be specified globally or per-interval in nominal.json.
-          E.g. "paramC": 1.0 or "paramC": [0.5, 1.5]
+
+Use --table to create a lookup table for all generated points (in random/uniform mode).
+Use --reweighting nominal.json to generate reweighting runcards.
         """
     )
     parser.add_argument("parameters", help="Parameter file (.json/.txt), table (.dat), newscan_dir, or scan_dir (tune mode)")
