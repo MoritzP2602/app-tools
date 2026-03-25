@@ -961,7 +961,7 @@ Use --reweighting to generate (sector-wise) reweighting runcards with per-sector
     parser.add_argument("-s", "--seed", type=int, help="Random seed (random mode)")
     parser.add_argument("-d", "--default", help="Defaults.json file (tune/minmax mode)")
     parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
-    parser.add_argument("--tune-tag", help="Prefix for tune directories (default: tune_)")
+    parser.add_argument("--tune-tag", dest="tune_tag", help="Prefix for tune directories (default: tune_)")
     parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode")
     parser.add_argument("-t", "--table", action="store_true", help="Create a lookup table for all generated points")
     parser.add_argument("-r", "--reweighting", help="Nominal parameter set for (sector-wise) reweighting runcards")

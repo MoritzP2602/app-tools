@@ -59,9 +59,34 @@ def merge_jsons_in_dir(json_dir, keep_dir=False, out_file=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Merge multiple surrogate JSON files into a single file.")
+    parser = argparse.ArgumentParser(
+        description="Merge multiple surrogate JSON files into a single file.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  merge_surrogates.py surrogates_dir -o merged_surrogate.json
+  merge_surrogates.py split_surrogates --keep-dir -o final.json
+
+This script merges numbered JSON files (0.json, 1.json, 2.json, ...) from a
+directory into a single merged file.
+
+Input directory structure:
+  surrogates_dir/
+    0.json  (contains surrogate data)
+    1.json  (contains surrogate data)
+    2.json  (contains surrogate data)
+    ...
+
+Output:
+  merged_surrogate.json  (combined data from all files)
+
+If --keep-dir is not specified, the input directory is deleted after merging.
+If --xmin and --xmax fields exist in the JSON, they are preserved in the
+final merged output.
+        """
+    )
     parser.add_argument("input_dir", help="Directory containing the JSON files to merge")
-    parser.add_argument("--keep_dir", action="store_true", help="Keep the input JSON directory after merging")
+    parser.add_argument("--keep-dir", dest="keep_dir", action="store_true", help="Keep the input JSON directory after merging")
     parser.add_argument("-o", "--output", help="Name for output file (default: <directory_name>.json)")
     args = parser.parse_args()
 
