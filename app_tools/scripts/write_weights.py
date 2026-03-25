@@ -39,13 +39,14 @@ This script reads a YODA file and extracts all observables, writing a weight
 file with one weight entry per observable (or per bin if --bins is used).
 
 Output format (default):
-  /ATLAS_Run2/d01x01y01 1.0  # bins: 20
-  /ATLAS_Run2/d02x01y01 1.0  # bins: 15
+  /ATLAS_Analysis/d01-x01-y01 1.0  # bins: 20
+  /ATLAS_Analysis/d02-x01-y01 1.0  # bins: 15
+  ...
 
 Output format (with --bins):
-  /ATLAS_Run2/d01x01y01#0 1.0  # bin 1
-  /ATLAS_Run2/d01x01y01#1 1.0  # bin 2
-  /ATLAS_Run2/d01x01y01#2 1.0  # bin 3
+  /ATLAS_Analysis/d01-x01-y01#0 1.0  # bin 1
+  /ATLAS_Analysis/d01-x01-y01#1 1.0  # bin 2
+  /ATLAS_Analysis/d01-x01-y01#2 1.0  # bin 3
   ...
 
 Warnings are printed for observables that cannot be found in Rivet references.

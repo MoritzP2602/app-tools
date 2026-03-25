@@ -38,13 +38,24 @@ them into a single output file. Each weight line format is:
   observable_name weight_value [optional_comment]
 
 Scaling example:
-  Input file 1: obs1 1.0
-  Input file 2: obs2 2.0
+  Input file 1:
+    /ATLAS_Analysis/d01-x01-y01 1.0  # bins: 20
+    /ATLAS_Analysis/d02-x01-y01 1.0  # bins: 15
+    ...
+  Input file 2:
+    /CMS_Analysis/d07-x01-y01 1.0  # bins: 12
+    /CMS_Analysis/d08-x01-y01 1.0  # bins: 18
+    ...
   
   Command: combine_weights.py file1.txt 2.0 file2.txt 0.5 -o out.txt
   
-  Output: obs1 2.0
-          obs2 1.0
+  Output:
+    /ATLAS_Analysis/d01-x01-y01 2.0  # bins: 20
+    /ATLAS_Analysis/d02-x01-y01 2.0  # bins: 15
+    ...
+    /CMS_Analysis/d07-x01-y01 0.5  # bins: 12
+    /CMS_Analysis/d08-x01-y01 0.5  # bins: 18
+    ...
         """
     )
     parser.add_argument("files_and_scales", nargs="+", help="Alternating file and scale pairs: file1 scale1 [file2 scale2 ...]")

@@ -136,6 +136,7 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
     out_base = os.path.join(outdir)
     os.makedirs(out_base, exist_ok=True)
 
+    wrote_default = False
     if defaults is not None:
         out_dir = os.path.join(out_base, "default")
         os.makedirs(out_dir, exist_ok=True)
@@ -148,6 +149,7 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
         with open(out_file, "w") as f:
             f.write(filled)
         print(f"Wrote default values to {out_file}.")
+        wrote_default = True
 
     tune_subdirs = sorted([d for d in os.listdir(scan_dir) 
                           if tune_tag in d and os.path.isdir(os.path.join(scan_dir, d))])
@@ -156,6 +158,7 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
         print(f"Error: No {tune_tag}* subdirectories found in '{scan_dir}'!")
         sys.exit(1)
 
+    wrote_tune_cards = 0
     for subdir in tune_subdirs:
         full_subdir = os.path.join(scan_dir, subdir)
         min_files = glob.glob(os.path.join(full_subdir, "minimum_*.txt"))
@@ -193,9 +196,12 @@ def tune_mode(scan_dir, template_path, tune_tag, defaults_path=None, outdir="new
         with open(out_file, "w") as f:
             f.write(filled)
         print(f"Wrote {out_file}")
+        wrote_tune_cards += 1
+
+    return wrote_tune_cards, wrote_default
 
 
-def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infofile_path=None):
+def minmax_mode(boxdef, defaults_path, template_path, outdir="newscan", infofile_path=None):
     model = ParameterModel.from_file(boxdef)
 
     for name, spec in model.specs.items():
@@ -218,13 +224,15 @@ def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infof
 
     param_sets = []
     info_lines = []
+    info_pad_width = _zfill_for_count(2 * len(param_order))
     for idx, param_name in enumerate(param_order):
         lo, hi = model.specs[param_name]["bounds"]
         for bound_idx, bound_name in enumerate(["min", "max"]):
             params = defaults.copy()
             params[param_name] = lo if bound_idx == 0 else hi
             param_sets.append(params)
-            info_lines.append(f"{2*idx + bound_idx}\t{param_name}: {bound_name}")
+            info_idx = f"{2 * idx + bound_idx}".zfill(info_pad_width)
+            info_lines.append(f"{info_idx}\t{param_name}: {bound_name}")
 
     if infofile_path is not None:
         info_dir = os.path.dirname(infofile_path)
@@ -232,7 +240,7 @@ def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infof
             os.makedirs(info_dir, exist_ok=True)
         try:
             with open(infofile_path, "w") as f:
-                f.write("index\tparameter: bound\n")
+                f.write("# INDEX\tPARAMETER: min/max\n")
                 for line in info_lines:
                     f.write(line + "\n")
         except IOError as e:
@@ -248,6 +256,7 @@ def minmax_mode(boxdef, defaults_path, template_path, outdir="minmaxscan", infof
     template_name = os.path.basename(template_path)
     templates = {template_name: template_content}
     write_params(param_sets, templates, outdir)
+    return len(param_sets)
 
 
 def _is_number(x):
@@ -833,6 +842,8 @@ def _validate_mode_compatibility(args, is_json, is_dat, is_directory):
             print("Warning: --seed argument ignored in tune mode.")
         if args.table:
             print("Warning: --table argument ignored in tune mode.")
+        if args.reweighting:
+            print("Warning: --reweighting argument ignored in tune mode.")
         return
 
     if args.mode == "minmax":
@@ -842,12 +853,22 @@ def _validate_mode_compatibility(args, is_json, is_dat, is_directory):
         if not args.default:
             print("Error: minmax mode requires --default defaults.json file!")
             sys.exit(1)
+        if args.npoints is not None:
+            print("Warning: npoints argument ignored in minmax mode.")
+        if args.seed is not None:
+            print("Warning: --seed argument ignored in minmax mode.")
+        if args.table:
+            print("Warning: --table argument ignored in minmax mode.")
+        if args.reweighting:
+            print("Warning: --reweighting argument ignored in minmax mode.")
         return
 
     if args.default is not None:
         print("Warning: --default argument ignored in random/uniform mode.")
     if args.tune_tag is not None:
         print("Warning: --tune_tag argument ignored in random/uniform mode.")
+    if args.precision is not None:
+        print("Warning: --precision argument ignored in random/uniform mode.")
 
     if is_directory or is_dat:
         if args.npoints is not None:
@@ -932,6 +953,18 @@ def _print_created_outputs(args, wrote_table, wrote_reweighting):
         print(f"  - {path}")
 
 
+def _summarize_non_sampling_mode(args, source_msg, npoints=None, tune_tag=None):
+    print("\nRun summary:")
+    print(f"  Mode: {args.mode}")
+    print(f"  Parameter source: {source_msg}")
+    if args.default:
+        print(f"  Default source: {args.default}")
+    if tune_tag:
+        print(f"  Tune tag: {tune_tag}")
+    if npoints is not None:
+        print(f"  Number of points: {npoints}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Sample and create templates for parameter grid generation.",
@@ -941,7 +974,7 @@ Examples:
   create_grid.py parameters.json TEMPLATE.yaml 20
   create_grid.py parameters.json TEMPLATE.yaml 20 --seed 42 --table
   create_grid.py parameters.json TEMPLATE.yaml 20 --table --reweighting nominal.json -o scan
-  create_grid.py newscan TEMPLATE.yaml --mode tune --default defaults.json
+  create_grid.py tunes TEMPLATE.yaml --mode tune --default defaults.json
   create_grid.py newscan.dat TEMPLATE.yaml --reweighting nominal.json -o output
 
 Modes:
@@ -950,21 +983,42 @@ Modes:
   tune        Process existing scan directory with tune_* subdirectories
   minmax      Generate min/max points for each parameter
 
-Use --table to create a lookup table for all generated points.
-Use --reweighting to generate (sector-wise) reweighting runcards with per-sector nominal values.
+This script supports multiple input types:
+  random/uniform:
+    - Parameter file (.json or .txt): Defines parameter ranges for sampling.
+    - Table file (.dat): Load parameters from a pre-generated table (generated with --table).
+    - Existing grid: Load parameters from an existing grid.
+  tune:
+    - Directory containing tune_* subdirectories: Load tuned parameter sets.
+  minmax:
+    - Parameter file (.json or .txt): Creates min/max points for each parameter independently.
+
+Use --table to create a lookup table for all generated points (in random/uniform mode).
+Use --reweighting nominal.json to generate reweighting runcards.
+
+For random/uniform mode, if a JSON parameter file is provided, these two features are supported:
+  Dynamic bounds: Parameter bounds can depend on other parameters
+    E.g. "paramA": ["paramB", 2.0] means paramA's bounds are [paramB, 2.0])
+  Sectorized parameters: Define sampling sectors for specific parameters
+    E.g. "paramC": [0.0, 1.0, 2.0] defines 2 sectors for paramC: [0.0, 1.0] and [1.0, 2.0]
+      - Each sector contains the same number of points.
+      - Sectors are defined by the Cartesian product of all sectorized parameters' intervals.
+      - Create separate reweighting runcards for each sector with --reweighting.
+        - Nominal values can be specified globally or per-interval in nominal.json.
+          E.g. "paramC": 1.0 or "paramC": [0.5, 1.5]
         """
     )
     parser.add_argument("parameters", help="Parameter file (.json/.txt), table (.dat), newscan_dir, or scan_dir (tune mode)")
     parser.add_argument("template", help="Template file")
-    parser.add_argument("npoints", nargs="?", type=int, help="Total points for sampling (json/txt + random/uniform)")
+    parser.add_argument("npoints", nargs="?", type=int, help="Total points for sampling (.json/.txt in random/uniform mode)")
     parser.add_argument("--mode", choices=["random", "uniform", "tune", "minmax"], default="random", help="Sampling mode (default: random)")
     parser.add_argument("-s", "--seed", type=int, help="Random seed (random mode)")
-    parser.add_argument("-d", "--default", help="Defaults.json file (tune/minmax mode)")
     parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
-    parser.add_argument("--tune-tag", dest="tune_tag", help="Prefix for tune directories (default: tune_)")
-    parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode")
     parser.add_argument("-t", "--table", action="store_true", help="Create a lookup table for all generated points")
     parser.add_argument("-r", "--reweighting", help="Nominal parameter set for (sector-wise) reweighting runcards")
+    parser.add_argument("-d", "--default", help="Defaults.json file (tune/minmax mode)")
+    parser.add_argument("--tune-tag", dest="tune_tag", help="Prefix for tune directories (default: tune_)")
+    parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode")
     args = parser.parse_args()
 
     if not os.path.exists(args.parameters):
@@ -987,12 +1041,25 @@ Use --reweighting to generate (sector-wise) reweighting runcards with per-sector
     if args.mode == "tune":
         if args.tune_tag is None:
             args.tune_tag = "tune_"
-        tune_mode(args.parameters, args.template, args.tune_tag, args.default, args.outdir, args.precision)
+        wrote_tune_cards, _ = tune_mode(args.parameters, args.template, args.tune_tag, args.default, args.outdir, args.precision)
+        _summarize_non_sampling_mode(
+            args,
+            source_msg=f"existing directory: {args.parameters}",
+            npoints=wrote_tune_cards,
+            tune_tag=args.tune_tag,
+        )
+        _print_created_outputs(args, wrote_table=False, wrote_reweighting=False)
         return
 
     if args.mode == "minmax":
         infofile_path = os.path.join(args.outdir, "params.dat")
-        minmax_mode(args.parameters, args.default, args.template, args.outdir, infofile_path=infofile_path)
+        npoints = minmax_mode(args.parameters, args.default, args.template, args.outdir, infofile_path=infofile_path)
+        _summarize_non_sampling_mode(
+            args,
+            source_msg=f"parameter-file: {args.parameters}",
+            npoints=npoints,
+        )
+        _print_created_outputs(args, wrote_table=False, wrote_reweighting=False)
         return
 
     model = None

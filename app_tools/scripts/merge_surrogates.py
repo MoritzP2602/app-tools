@@ -81,8 +81,7 @@ Output:
   merged_surrogate.json  (combined data from all files)
 
 If --keep-dir is not specified, the input directory is deleted after merging.
-If --xmin and --xmax fields exist in the JSON, they are preserved in the
-final merged output.
+If --xmin and --xmax fields exist in the JSON, they are preserved in the final merged output.
         """
     )
     parser.add_argument("input_dir", help="Directory containing the JSON files to merge")

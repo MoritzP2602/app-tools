@@ -68,7 +68,7 @@ Output structure:
     00
     01
     02
-    03
+    ...
   weight_files.txt  (file listing paths to all weight files, one per line)
 
 Note: Bin-specific weights (containing '#') are filtered out from the split.
