@@ -34,7 +34,7 @@ setup(
             "app-tools-combine_weights=app_tools.scripts.combine_weights:main",
             "app-tools-create_grid=app_tools.scripts.create_grid:main",
             "app-tools-merge_surrogates=app_tools.scripts.merge_surrogates:main",
-            "app-tools-split_reweighted_runs=app_tools.scripts.split_reweighted_runs:main",
+            "app-tools-split_reweighted_runs=app_tools.scripts.split_reweighting:main",
             "app-tools-split_weights=app_tools.scripts.split_weights:main",
             "app-tools-write_weights=app_tools.scripts.write_weights:main",
         ],

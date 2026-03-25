@@ -106,8 +106,8 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None):
             for param_name, values in variation_params_map.items():
                 print(f"  {param_name}: {values}")
                 if n_expected_variations is None:
-                    n_expected_variations = len(values) - 1
-                elif n_expected_variations != len(values) - 1:
+                    n_expected_variations = len(values)
+                elif n_expected_variations != len(values):
                     print(f"Error: All parameters in variations file must have the same number of values!")
                     sys.exit(1)
     
@@ -125,7 +125,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None):
             print(f"Processing flat directory with YODA file: {direct_yoda_files[0].name}")
         elif subdirs:
             yoda_files_to_process = []
-            for subdir in subdirs:
+            for subdir in sorted(subdirs, key=lambda d: d.name):
                 yoda_files = list(subdir.glob("*.yoda"))
                 if yoda_files:
                     yoda_files_to_process.append((subdir, yoda_files[0]))
@@ -216,8 +216,8 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None):
                 new_params_path = new_subdir_path / "params.dat"
                 var_params = {}
                 for param_name, param_values in variation_params_map.items():
-                    if var_num < len(param_values):
-                        var_params[param_name] = param_values[var_num]
+                    if var_idx < len(param_values):
+                        var_params[param_name] = param_values[var_idx]
                 
                 src_params = params_file if params_file and params_file.exists() else Path("/dev/null")
                 copy_and_extend_params_file(src_params if src_params.exists() else Path(), new_params_path, var_params)
@@ -251,15 +251,10 @@ corresponding variation parameter values.
         """
     )
     
-    parser.add_argument('input', type=str,
-                        help='Input YODA file or directory containing YODA files')
-    parser.add_argument('pattern', type=str,
-                        help='Variation pattern to match (e.g., "MPI.v" for [MPI.v0], [MPI.v1], etc.)')
-    parser.add_argument('-o', '--outdir', type=str, default=None,
-                        help='Output directory for split YODA files (default: input + "_split")')
-    parser.add_argument('-v', '--variations', type=str, default=None,
-                        help='Path to variations.dat file containing parameter variations')
-    
+    parser.add_argument('input', type=str, help='Input YODA file or directory containing YODA files')
+    parser.add_argument('pattern', type=str, help='Variation pattern to match (e.g., "MPI.v" for [MPI.v0], [MPI.v1], etc.)')
+    parser.add_argument('-o', '--outdir', type=str, default=None, help='Output directory for split YODA files (default: input + ".split")')
+    parser.add_argument('-v', '--variations', type=str, default=None, help='Path to variations.dat file containing parameter variations')
     args = parser.parse_args()
     
     if not os.path.exists(args.input):
@@ -268,9 +263,9 @@ corresponding variation parameter values.
     
     if args.outdir is None:
         if os.path.isfile(args.input):
-            args.outdir = Path(args.input).stem + '_split'
+            args.outdir = Path(args.input).stem + '.split'
         else:
-            args.outdir = args.input.rstrip('/') + '_split'
+            args.outdir = args.input.rstrip('/') + '.split'
     
     if args.variations and not os.path.isfile(args.variations):
         print(f"Error: Variations file '{args.variations}' does not exist!")

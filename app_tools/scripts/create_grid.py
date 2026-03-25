@@ -788,7 +788,7 @@ def build_reweighting_dict(points, sector_nominal_values):
     return d
 
 
-def write_reweighting_runcards_by_sector(param_list, templates, nominal_values, outdir="newscan-reweighting"):
+def write_reweighting_runcards_by_sector(param_list, templates, nominal_values, outdir="newscan.rew"):
     os.makedirs(outdir, exist_ok=True)
     grouped = OrderedDict()
     for p in param_list:
@@ -814,7 +814,7 @@ def write_reweighting_runcards_by_sector(param_list, templates, nominal_values, 
     return combined
 
 
-def write_variations_file(param_dict, outdir="newscan-reweighting"):
+def write_variations_file(param_dict, outdir="newscan.rew"):
     variations_file = os.path.join(outdir, "variations.dat")
     with open(variations_file, "w") as f:
         for param_name, values in param_dict.items():
@@ -896,17 +896,22 @@ def _summarize_input_and_plan(args, source_kind, model, param_list):
     print("\nRun summary:")
     print(f"  Mode: {args.mode}")
     print(f"  Parameter source: {source_msg}")
+    if args.reweighting:
+        print(f"  Nominal source: {args.reweighting}")
     if args.mode == "random" and source_kind == "parameter-file" and args.seed is not None:
         print(f"  Random seed: {args.seed}")
     print(f"  Number of points: {npoints}")
-    print(f"  Number of sectors: {nsectors}")
+    
+    if nsectors > 1:
+        print(f"  Number of sectors: {nsectors}")
 
     if model is None and source_kind in ["table-file", "directory"]:
         print("  Dynamic parameters: unknown (input is pre-generated, not boundary model)")
-    else:
-        print("  Dynamic parameters: " + (", ".join(dynamic_params) if dynamic_params else "none"))
+    elif dynamic_params:
+        print("  Dynamic parameters: " + ", ".join(dynamic_params))
 
-    print("  Sectorized parameters: " + (", ".join(sectorized_params) if sectorized_params else "none"))
+    if sectorized_params:
+        print("  Sectorized parameters: " + ", ".join(sectorized_params))
 
 
 def _print_created_outputs(args, wrote_table, wrote_reweighting):
@@ -918,7 +923,7 @@ def _print_created_outputs(args, wrote_table, wrote_reweighting):
         outputs.append(table_file)
 
     if wrote_reweighting:
-        rw_dir = outdir_clean + "-reweighting"
+        rw_dir = outdir_clean + ".rew"
         outputs.append(rw_dir)
         outputs.append(os.path.join(rw_dir, "variations.dat"))
 
@@ -928,7 +933,27 @@ def _print_created_outputs(args, wrote_table, wrote_reweighting):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sample and instantiate templates for parameter grid generation.")
+    parser = argparse.ArgumentParser(
+        description="Sample and create templates for parameter grid generation.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  create_grid.py parameters.json TEMPLATE.yaml 20
+  create_grid.py parameters.json TEMPLATE.yaml 20 --seed 42 --table
+  create_grid.py parameters.json TEMPLATE.yaml 20 --table --reweighting nominal.json -o scan
+  create_grid.py newscan TEMPLATE.yaml --mode tune --default defaults.json
+  create_grid.py newscan.dat TEMPLATE.yaml --reweighting nominal.json -o output
+
+Modes:
+  random      Sample points randomly from parameter ranges (default)
+  uniform     Sample points on uniform grid
+  tune        Process existing scan directory with tune_* subdirectories
+  minmax      Generate min/max points for each parameter
+
+Use --table to create a lookup table for all generated points.
+Use --reweighting to generate (sector-wise) reweighting runcards with per-sector nominal values.
+        """
+    )
     parser.add_argument("parameters", help="Parameter file (.json/.txt), table (.dat), newscan_dir, or scan_dir (tune mode)")
     parser.add_argument("template", help="Template file")
     parser.add_argument("npoints", nargs="?", type=int, help="Total points for sampling (json/txt + random/uniform)")
@@ -936,10 +961,10 @@ def main():
     parser.add_argument("-s", "--seed", type=int, help="Random seed (random mode)")
     parser.add_argument("-d", "--default", help="Defaults.json file (tune/minmax mode)")
     parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
-    parser.add_argument("--tune_tag", help="Prefix for tune directories (default: tune_)")
+    parser.add_argument("--tune-tag", help="Prefix for tune directories (default: tune_)")
     parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode")
-    parser.add_argument("--table", action="store_true", help="Create a lookup table with sectors")
-    parser.add_argument("--reweighting", help="Nominal parameter set for sector-wise reweighting runcards")
+    parser.add_argument("-t", "--table", action="store_true", help="Create a lookup table for all generated points")
+    parser.add_argument("-r", "--reweighting", help="Nominal parameter set for (sector-wise) reweighting runcards")
     args = parser.parse_args()
 
     if not os.path.exists(args.parameters):
@@ -949,8 +974,10 @@ def main():
         print(f"Error: Template file '{args.template}' not found!")
         sys.exit(1)
     if args.mode in ["random", "uniform", "minmax"] and os.path.exists(args.outdir):
-        print(f"Error: Output directory '{args.outdir}' already exists, please remove it or choose a different name!")
-        sys.exit(1)
+        response = input(f"Warning: Output directory '{args.outdir}' already exists. Continue? [y/N] ")
+        if response.lower() != 'y':
+            print("Aborted.")
+            sys.exit(1)
 
     is_directory = os.path.isdir(args.parameters)
     is_dat = os.path.isfile(args.parameters) and args.parameters.endswith(".dat")
@@ -1003,7 +1030,7 @@ def main():
     wrote_reweighting = False
     if args.reweighting:
         nominal_values = load_nominal_parameter_values(args.reweighting)
-        reweight_outdir = args.outdir.rstrip("/") + "-reweighting"
+        reweight_outdir = args.outdir.rstrip("/") + ".rew"
         combined = write_reweighting_runcards_by_sector(param_list, templates, nominal_values, outdir=reweight_outdir)
         write_variations_file(combined, outdir=reweight_outdir)
         wrote_reweighting = True
