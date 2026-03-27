@@ -44,28 +44,29 @@ def read_analyses(afile):
 			analyses.add(line)
 	return analyses
 
+def is_estimate(obj):
+	return "Estimate" in type(obj).__name__
 
-def is_estimate1d(obj):
-	return "Estimate1D" in type(obj).__name__ and hasattr(obj, "bins")
+def is_histo(obj):
+	return "Histo" in type(obj).__name__
 
-def is_histo1d(obj):
-	return "Histo1D" in type(obj).__name__ and hasattr(obj, "bins")
+def is_profile(obj):
+	return "Profile" in type(obj).__name__
 
-def is_profile1d(obj):
-	return "Profile1D" in type(obj).__name__ and hasattr(obj, "bins")
-
-def is_scatter2d(obj):
-	return "Scatter2D" in type(obj).__name__ and hasattr(obj, "points")
+def is_scatter(obj):
+	return "Scatter" in type(obj).__name__
 
 def accepted_type(obj):
 	"""Check if object is a supported YODA type."""
-	if is_estimate1d(obj):
+	if not hasattr(obj, "type") or not callable(obj.type):
+		return False
+	if is_estimate(obj):
 		return True
-	if is_histo1d(obj):
+	if is_histo(obj):
 		return True
-	if is_profile1d(obj):
+	if is_profile(obj):
 		return True
-	if is_scatter2d(obj):
+	if is_scatter(obj):
 		return True
 	return False
 
@@ -100,103 +101,68 @@ class YodaLoader:
 		self.yodas[analysis_name] = ref_yoda
 		return ref_yoda
 	
-	def extract_bins_estimate1d(self, obj):
-		if callable(obj.path):
+	def extract_bins_profile(self, obj):
+		if hasattr(obj, "path") and callable(obj.path):
 			path = obj.path()
 		else:
-			raise TypeError("Unsupported YODA object: missing callable path() method.")
-		bin_dict = {}
+			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable path() method.")
+		
+		# --- Note ------------------------------------------------------------------------------- #
+		# For Profile objects, mkScatter() and point.errs() return errors equal to zero.           #
+	    # This means, we have to use Profile specific methods in this case (tested for Profile1D). #
+		# ---------------------------------------------------------------------------------------- #
 
+		dim = obj.dim()
+		if dim != 2:
+			print(f"Warning: Profile object with dim != 2 encountered. "
+		 		  f"Please double check the results for this observable, obj: {obj}.")
+		bin_dict = {}
 		for i, bin in enumerate(obj.bins()):
 			bin_name = f"{path}#{i}"
-			y_val = bin.val()
-
-			if hasattr(bin, "sources") and callable(bin.sources):
-				error_sources = bin.sources()
-				err = [0.0, 0.0]
-				for source in error_sources:
-					try: err[0] += abs(bin.errNeg(source)) ** 2
-					except Exception: pass
-					try: err[1] += abs(bin.errPos(source)) ** 2
-					except Exception: pass
-				y_err = (np.sqrt(err[0]) + np.sqrt(err[1])) / 2.0
-			else:
-				y_err = np.nan
-			bin_dict[bin_name] = (y_val, y_err)
-
-		return bin_dict
-
-	def extract_bins_histo1d(self, obj):
-		if callable(obj.path):
-			path = obj.path()
-		else:
-			raise TypeError("Unsupported YODA object: missing callable path() method.")
-		bin_dict = {}
-
-		obj = obj.mkScatter()
-		for i, p in enumerate(obj.points()):
-			bin_name = f"{path}#{i}"
-			if hasattr(p, "y") and callable(p.y):
-				y_val = p.y()
-			else: y_val = np.nan
-			if hasattr(p, "yErrs") and callable(p.yErrs):
-				err = p.yErrs()
-				y_err = (abs(err[0]) + abs(err[1])) / 2.0
-			else: y_err = np.nan
-			bin_dict[bin_name] = (y_val, y_err)
+			if hasattr(bin, "mean") and callable(bin.mean):
+				val = bin.mean(dim)
+			else: val = np.nan
+			if hasattr(bin, "stdErr") and callable(bin.stdErr):
+				err = bin.stdErr(dim)
+			else: err = np.nan
+			bin_dict[bin_name] = (val, err)
 
 		return bin_dict
 	
-	def extract_bins_profile1d(self, obj):
-		if callable(obj.path):
+	def extract_bins_scatter(self, obj):
+		if hasattr(obj, "path") and callable(obj.path):
 			path = obj.path()
 		else:
-			raise TypeError("Unsupported YODA object: missing callable path() method.")
+			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable path() method.")
+		if not hasattr(obj, "mkScatter") or not callable(obj.mkScatter):
+			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable mkScatter() method.")
+		scatter = obj.mkScatter()
+		
+		dim = scatter.dim()
 		bin_dict = {}
-
-		for i, bin in enumerate(obj.bins()):
+		for i, p in enumerate(scatter.points()):
 			bin_name = f"{path}#{i}"
-			if hasattr(bin, "yMean") and callable(bin.yMean):
-				y_val = bin.yMean()
-			else: y_val = np.nan
-			if hasattr(bin, "yStdErr") and callable(bin.yStdErr):
-				y_err = bin.yStdErr()
-			else: y_err = np.nan
-			bin_dict[bin_name] = (y_val, y_err)
+			if hasattr(p, "val") and callable(p.val):
+				val = p.val(dim - 1)
+			else: val = np.nan
+			if hasattr(p, "errs") and callable(p.errs):
+				err = sum(p.errs(dim - 1)) / 2
+			else: err = np.nan
+			bin_dict[bin_name] = (val, err)
 
-		return bin_dict
-	
-	def extract_bins_scatter2d(self, obj):
-		if callable(obj.path):
-			path = obj.path()
-		else:
-			raise TypeError("Unsupported YODA object: missing callable path() method.")
-		bin_dict = {}
-
-		for i, p in enumerate(obj.points()):
-			bin_name = f"{path}#{i}"
-			if hasattr(p, "y") and callable(p.y):
-				y_val = p.y()
-			else: y_val = np.nan
-			if hasattr(p, "yErrs") and callable(p.yErrs):
-				err = p.yErrs()
-				y_err = (abs(err[0]) + abs(err[1])) / 2.0
-			else: y_err = np.nan
-			bin_dict[bin_name] = (y_val, y_err)
-			
 		return bin_dict
 
 	def extract_bins(self, obj):
 		"""Dispatches to correct method based on object type."""
 		
-		if is_estimate1d(obj):
-			return self.extract_bins_estimate1d(obj)
-		elif is_scatter2d(obj):
-			return self.extract_bins_scatter2d(obj)
-		elif is_histo1d(obj):
-			return self.extract_bins_histo1d(obj)
-		elif is_profile1d(obj):
-			return self.extract_bins_profile1d(obj)
+		if is_estimate(obj):
+			return self.extract_bins_scatter(obj)
+		elif is_scatter(obj):
+			return self.extract_bins_scatter(obj)
+		elif is_histo(obj):
+			return self.extract_bins_scatter(obj)
+		elif is_profile(obj):
+			return self.extract_bins_profile(obj)
 		else:
 			raise TypeError(f"Unsupported YODA object type: {type(obj).__name__}")
 
@@ -547,7 +513,16 @@ def build_labels(files, labels=None):
         return labels
     if labels and len(labels) != len(files):
         print(f"Warning: labels count ({len(labels)}) does not match file count ({len(files)}), using file stems.")
-    return [f.stem for f in files]
+
+    def build_label_from_path(path):
+        name = Path(path).name
+        if name.endswith(".yoda.gz"):
+            return name[:-len(".yoda.gz")]
+        if name.endswith(".yoda"):
+            return name[:-len(".yoda")]
+        return Path(path).stem
+
+    return [build_label_from_path(f) for f in files]
 
 
 def compute_analysis_chi2(obs_chi2s):
@@ -582,27 +557,31 @@ def print_table(summaries, show_analyses=False):
 		chi2_dict["red"][s["label"]] = s["reduced_chi2"] if np.isfinite(s["reduced_chi2"]) else np.inf
 		chi2_dict["avg"][s["label"]] = s["avg_obs_chi2"] if np.isfinite(s["avg_obs_chi2"]) else np.inf
 
-		for a in s["analysis_chi2"].keys():
-			table.append(
-				[
-					f"- {a}",
-					f"{s['analysis_chi2'][a][0]:.3f}",
-					f"{s['analysis_chi2'][a][1]:.0f}",
-					f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1]):.3f}" if s['analysis_chi2'][a][1] > 0 else "nan",
-					""
-				]
-			)
+		if show_analyses:
+			for a in s["analysis_chi2"].keys():
+				table.append(
+					[
+						f"- {a}",
+						f"{s['analysis_chi2'][a][0]:.3f}",
+						f"{s['analysis_chi2'][a][1]:.0f}",
+						f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1]):.3f}" if s['analysis_chi2'][a][1] > 0 else "nan",
+						""
+					]
+				)
 	
 	print(tabulate(table, 
 				headers=["Label", "Global chi2", "ndf", "Reduced chi2", "Average chi2"], tablefmt="simple_outline"))
 	print()
-	min_reduced_key = min(chi2_dict["red"], key=chi2_dict["red"].get)
-	print(f"Min. reduced chi2: {chi2_dict['red'][min_reduced_key]:.2f} "
-			f"(label: {min_reduced_key}, source: {s['source']})")
+	min_red_key = min(chi2_dict["red"], key=chi2_dict["red"].get)
+	if np.isfinite(chi2_dict["red"][min_red_key]):
+		print(f"Min. reduced chi2: {chi2_dict['red'][min_red_key]:.2f} "
+				f"(label: {min_red_key}, source: {s['source']})")
 	min_avg_key = min(chi2_dict["avg"], key=chi2_dict["avg"].get)
-	print(f"Min. average chi2: {chi2_dict['avg'][min_avg_key]:.2f} "
-			f"(label: {min_avg_key}, source: {s['source']})")
-	print()
+	if np.isfinite(chi2_dict["avg"][min_avg_key]):
+		print(f"Min. average chi2: {chi2_dict['avg'][min_avg_key]:.2f} "
+				f"(label: {min_avg_key}, source: {s['source']})")
+	if np.isfinite(chi2_dict["red"][min_red_key]) or np.isfinite(chi2_dict["avg"][min_avg_key]):
+		print()
 
 
 def print_error_summary(loader):
@@ -684,7 +663,7 @@ def main():
 	parser.add_argument("-v" , "--debug", action="store_true", default=False, help="Enable debug output")
 	args = parser.parse_args()
 
-	# Initialize YODA loader and read weights/analyses files if provided
+	"""Initialize YODA loader and read weights/analyses files if provided"""
 	try:
 		loader = YodaLoader()
 		weights  = read_weights(args.weights)   if args.weights  else None
@@ -701,7 +680,7 @@ def main():
 		print("Warning: --weighted requested without weights file. Falling back to unweighted mode.")
 		args.weighted = False
 
-	# If envelope option is used, determine valid bins before processing files
+	"""If envelope option is used, determine valid bins before processing files"""
 	valid_bins = None
 	if args.envelope:
 		valid_bins = process_envelope(args, loader, weights)
@@ -709,7 +688,7 @@ def main():
 			print("Error processing envelope files/no valid bins found.")
 			return 1
 
-	# Collect YODA files to process, applying tags and subdir options if needed
+	"""Collect YODA files to process, applying tags and subdir options if needed"""
 	yoda_files = collect_yoda_files(args.yoda_files, tags=args.tags, include_subdirs=args.subdir)
 	if not yoda_files:
 		print("No YODA files found.")
@@ -724,7 +703,7 @@ def main():
 		return 1
 	labels = build_labels(yoda_files, args.labels)
 
-	# Process each YODA file and collect summaries and observable-level stats for JSON output
+	"""Process each YODA file and collect summaries and observable-level stats for JSON output"""
 	summaries = []
 	obs_stats = []
 
@@ -746,7 +725,7 @@ def main():
 				summaries.append(summary)
 				obs_stats.extend(obs_rows)
 
-	# Print results table and write JSON output
+	"""Print results table and write JSON output"""
 	print_table(summaries, show_analyses=("analyses" in set(args.cli_output)))
 	if "errors" in set(args.cli_output): print_error_summary(loader)
 	write_chi2_json(args.output, summaries, obs_stats)
