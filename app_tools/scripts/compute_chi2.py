@@ -3,7 +3,6 @@ import argparse
 import json
 import os
 import re
-import sys
 import rivet
 import yoda
 from pathlib import Path
@@ -163,7 +162,7 @@ class YodaLoader:
 		else:
 			raise TypeError(f"Unsupported YODA object type: {type(obj).__name__}")
 
-	def get_bin_differences(self, yoda_file, weights_dict=None, analyses_set=None, include_ref_error=True, debug=False):
+	def get_bin_differences(self, yoda_file, weights_dict=None, analyses_set=None, debug=False):
 		if debug: print(f"Executing get_bin_differences for {yoda_file}")
 
 		self.error_counts[yoda_file] = {}
@@ -238,7 +237,7 @@ class YodaLoader:
 
 				ref_val, ref_err = bin_dict_ref[bin_name_ref]
 				diff = data_val - ref_val
-				err = np.sqrt(data_err ** 2 + ref_err ** 2) if include_ref_error else data_err
+				err = np.sqrt(data_err ** 2 + ref_err ** 2)
 				if err == 0 or np.isnan(err):
 					if debug: print(f"    Skipping bin {bin_name}. Invalid combined error {err}.")
 					self.error_counts[yoda_file]["Invalid combined error"] = self.error_counts[yoda_file].get("Invalid combined error", 0) + 1
@@ -370,7 +369,8 @@ def global_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
 				continue
 			if weighted:
 				chi2_sum += (weight ** 2) * term
-				ndf_sum  += weight ** 2
+				# ndf_sum  += weight ** 2
+				ndf_sum  += 1.0
 			else:
 				chi2_sum += term
 				ndf_sum  += 1.0
@@ -406,7 +406,8 @@ def obs_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
 				continue
 			if weighted:
 				chi2_sum += (weight ** 2) * term
-				ndf_sum  += weight ** 2
+				# ndf_sum  += weight ** 2
+				ndf_sum  += 1.0
 			else:
 				chi2_sum += term
 				ndf_sum  += 1.0
@@ -459,7 +460,7 @@ def process_single_file(args, loader, yoda_file,
 	"""Process a single YODA file and compute chi2 summary and per-observable chi2s."""
 
 	obs_dict = loader.get_bin_differences(str(yoda_file),
-		weights_dict=weights_dict, analyses_set=analyses_set, include_ref_error=True, debug=args.debug)
+		weights_dict=weights_dict, analyses_set=analyses_set, debug=args.debug)
 
 	chi2, ndf = global_chi2(obs_dict,
 		weighted=weighted, valid_bins=valid_bins, debug=args.debug)
@@ -468,7 +469,7 @@ def process_single_file(args, loader, yoda_file,
 	obs_chi2s = obs_chi2( obs_dict, 
 		weighted=weighted, valid_bins=valid_bins, debug=args.debug)
 	valid_obs = [chi2/ndf for chi2, ndf in obs_chi2s.values() if ndf > 0 and np.isfinite(chi2)]
-	avg_obs_chi2 = np.mean(valid_obs) if valid_obs else np.nan
+	average_chi2 = np.mean(valid_obs) if valid_obs else np.nan
 
 	analyses_chi2s = {}
 	if "analyses" in set(args.cli_output): 
@@ -476,19 +477,19 @@ def process_single_file(args, loader, yoda_file,
 
 	summary = {
 		"source"       : str(yoda_file),
-		"label"        : label,
+		"label"        : str(label),
 		"global_chi2"  : float(chi2),
 		"ndf"          : float(ndf),
 		"reduced_chi2" : float(reduced_chi2),
-		"avg_obs_chi2" : float(avg_obs_chi2),
+		"average_chi2" : float(average_chi2),
 		"analysis_chi2": analyses_chi2s
 	}
 
-	obs_rows = []
+	obs_data = []
 	for obs_name, (chi2, ndf) in sorted(obs_chi2s.items()):
 		if ndf > 0 and np.isfinite(chi2):
-			obs_rows.append((str(yoda_file), label, obs_name, chi2, ndf))
-	return summary, obs_rows
+			obs_data.append((str(yoda_file), str(label), str(obs_name), chi2, ndf))
+	return summary, obs_data
 
 
 def collect_yoda_files(yoda_inputs, tags=None, labels=None, include_subdirs=False):
@@ -568,15 +569,14 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 		table.append(
 			[
 				f"{s['label']}" if not show_sources else f"{s['source']}",
-				f"{s['global_chi2']:.3f}",
+				f"{s['global_chi2']:.3f}" if np.isfinite(s["global_chi2"]) else "nan",
 				f"{s['ndf']:.0f}",
 				f"{s['reduced_chi2']:.3f}" if np.isfinite(s["reduced_chi2"]) else "nan",
-				f"{s['avg_obs_chi2']:.3f}" if np.isfinite(s["avg_obs_chi2"]) else "nan",
+				f"{s['average_chi2']:.3f}" if np.isfinite(s["average_chi2"]) else "nan",
 			]
 		)
 		chi2_dict["red"][s["label"]] = s["reduced_chi2"] if np.isfinite(s["reduced_chi2"]) else np.inf
-		chi2_dict["avg"][s["label"]] = s["avg_obs_chi2"] if np.isfinite(s["avg_obs_chi2"]) else np.inf
-
+		chi2_dict["avg"][s["label"]] = s["average_chi2"] if np.isfinite(s["average_chi2"]) else np.inf
 		if show_analyses:
 			for a in s["analysis_chi2"].keys():
 				table.append(
@@ -584,7 +584,8 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 						f"- {a}",
 						f"{s['analysis_chi2'][a][0]:.3f}",
 						f"{s['analysis_chi2'][a][1]:.0f}",
-						f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1]):.3f}" if s['analysis_chi2'][a][1] > 0 else "nan",
+						f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1]):.3f}" \
+							if s['analysis_chi2'][a][1] > 0 else "nan",
 						""
 					]
 				)
@@ -636,25 +637,25 @@ def write_chi2_json(output_file, summaries, obs_stats, command):
 		"command": command,
 		"summaries": [
 			{
-				"source"      : str(s["source"]),
-				"label"       : str(s["label"]),
+				"source"      : s["source"],
+				"label"       : s["label"],
 				"global_chi2" : safe_float(s["global_chi2"]),
-				"ndf"         : int(s["ndf"]),
+				"ndf"         : safe_float(s["ndf"]),
 				"reduced_chi2": safe_float(s["reduced_chi2"]),
-				"avg_obs_chi2": safe_float(s["avg_obs_chi2"]),
+				"average_chi2": safe_float(s["average_chi2"]),
 			}
 			for s in summaries
 		],
 		"observables": [
 			{
-				"source"      : str(source),
-				"label"       : str(label),
-				"observable"  : str(obs),
+				"source"      : source,
+				"label"       : label,
+				"observable"  : obs_name,
 				"chi2"        : safe_float(chi2),
-				"ndf"         : int(ndf),
+				"ndf"         : safe_float(ndf),
 				"reduced_chi2": safe_float(chi2 / ndf),
 			}
-			for source, label, obs, chi2, ndf in obs_stats
+			for source, label, obs_name, chi2, ndf in obs_stats
 		],
 	}
 
@@ -674,7 +675,36 @@ def main():
 		print(f"Error: {e}.")
 		return 1
 
-	parser = argparse.ArgumentParser(description="Compute chi2 from YODA files and write results to a chi2.json file.")
+	parser = argparse.ArgumentParser(
+		description="Compute chi2 from YODA files and write results to a chi2.json file.",
+		formatter_class=argparse.RawDescriptionHelpFormatter,
+		epilog="""
+Examples:
+  compute_chi2.py "file1.yoda" --CLI-output analyses 
+  compute_chi2.py results/ --subdir
+  compute_chi2.py results/ --tags tag1 tag2 --labels label1 label2
+  compute_chi2.py results/ --envelope up.yoda dn.yoda --weights weights.txt --weighted
+
+Input handling:
+  - yoda_files accepts files and/or directories
+  - If a directory is provided, all .yoda/.yoda.gz files are collected (--subdir to include subdirectories)
+  - Weights (-w) and analyses (-a) files can be used to filter analyses/observables and provide obs/bin weights
+    - Weighted mode (--weighted) applies weights in chi2 computation (bin weight squared)
+  - Envelope option (-e) allows specifying up/down YODA files to determine valid bins
+    - Only bins where the reference value is between the up/down values are considered in the chi2 computation
+
+Labels and tags:
+  - With --tags, only files with matching tags in their filename are collected from the provided inputs
+	- Labels are assigned based on tag match (len(labels) must match len(tags))
+  - Without --tags, labels map by input argument (len(labels) must match len(yoda_files args))
+  - If counts do not match, file stems are used as labels
+		
+Output:
+  - Results are printed in a table format to the console
+  - Chi2 details are written to a JSON file (default: chi2.json) with summaries and per-observable stats	
+  - Additional CLI output options for per analyses chi2 results, sources instead of labels, and error summaries	
+		"""
+	)
 	parser.add_argument("yoda_files", nargs="+", help="YODA files or directories containing YODA files")
 	parser.add_argument("-w" , "--weights", default=None, help="Path to weights file")
 	parser.add_argument("-a" , "--analyses", default=None, help="Path to analyses filter file")
@@ -683,11 +713,11 @@ def main():
 	parser.add_argument("-l" , "--labels", nargs="+", default=None, help="Labels for inputs. With --tags: #labels must equal #tags and labels are assigned by tag match. Without --tags: #labels must equal #yoda_files arguments (directory labels are applied to all files from that input).")
 	parser.add_argument("-o" , "--output", default="chi2.json", help="Output chi2 JSON file")
 	parser.add_argument("-s" , "--subdir", action="store_true", default=False, help="Include subdirectories when input is a directory")
-	parser.add_argument("-wd", "--weighted", action="store_true", default=False, help="Use weighted chi2 computation")
-	parser.add_argument("-co", "--CLI-output", dest="cli_output", nargs="+", choices=["analyses", "sources", "errors"], default=[], help="Additional CLI output")
+	parser.add_argument("--weighted", action="store_true", default=False, help="Use weights in chi2 computation")
+	parser.add_argument("--CLI-output", dest="cli_output", nargs="+", choices=["analyses", "sources", "errors"], default=[], help="Additional CLI output")
 	parser.add_argument("-v" , "--debug", action="store_true", default=False, help="Enable debug output")
 	args = parser.parse_args()
-	command = " ".join(sys.argv)
+	command = " ".join(os.sys.argv)
 
 	"""Initialize YODA loader and read weights/analyses files if provided"""
 	try:
@@ -728,10 +758,10 @@ def main():
 	obs_stats = []
 
 	for yoda_file, label in zip(yoda_files, labels):
-		summary, obs_rows = process_single_file(args, loader, yoda_file, 
+		summary, obs_data = process_single_file(args, loader, yoda_file, 
 										  label, weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins, analyses_set=analyses)
 		summaries.append(summary)
-		obs_stats.extend(obs_rows)
+		obs_stats.extend(obs_data)
 
 	"""Print results table and write JSON output"""
 	print_table(summaries, 

@@ -43,7 +43,8 @@ This package automatically installs:
 ## Tools
 
 ### Python Scripts:
-- `app-tools-chi_squared`: Compute chi-squared statistics from YODA files
+- `app-tools-compute_chi2`: Compute chi-squared statistics and write results to `chi2.json`
+- `app-tools-plot_chi2`: Plot chi-squared results from `chi2.json` and generate an HTML report
 - `app-tools-combine_weights`: Scale and combine weight files
 - `app-tools-create_grid`: Generate parameter grids (enhanced version of app-sample)
 - `app-tools-merge_surrogates`: Merge multiple surrogate JSON files
@@ -53,55 +54,7 @@ This package automatically installs:
 
 ## Usage
 
-Chi-squared analysis: 
-```bash
-# use --help to get a full list of available options
-app-tools-chi_squared --help
-# get chi-squared values for all yoda files in a directory (and all subdirectories using --subdir) (e.g. newscan/), use --tags to filter .yoda files (e.g. git hash), use --plots to plot the results (grouped by filename), labels and colors are assigned to all files of a given tag (e.g. results for multiple runs and different tunes, tune1-DY_7TeV.yoda, tune1-DY_13TeV.yoda, ... and tune2-DY_7TeV.yoda, tune2-DY_13TeV.yoda, ... using --tags tune1 tune2 --plots will automatically group the .yoda files into the groups DY_7TeV, DY_13TeV, ... and plot the results together)
-app-tools-chi_squared directory/ [--weights weights.txt] [--tags tag1 tag2 ...] [--labels label1 label2 ...] [--colors color1 color2 ...] [--plots] [--default default-tag/default-directory/default.yoda] [--default_label default_label] [-o outdir]
-# get chi-squared values for all yoda files, --plots creates plots for each analysis, --default creates additional ratio plots, you can choose the labels and colors in the plots using --labels and --colors
-app-tools-chi_squared data1.yoda [data2.yoda ...] [--weights weights.txt] [--labels label1 label2 ...] [--colors color1 color2 ...] [--plots] [--default default.yoda] [--default_label default_label] [-o outdir]
-```
-Combine weight files:
-```bash
-# combine and scale multiple weight files
-app-tools-combine_weights weight_file1.txt factor1 [weight_file2.txt factor2 ...] [-o outfile]
-```
-Create parameter grid:
-```bash
-# create grid with n points, with parameters sampled randomly within specified intervalls (same function as app-sample)
-app-tools-create_grid parameter.json template.yaml npoints [--seed s] [--table] [-o outdir] (--mode random)
-# copy grid from another directory
-app-tools-create_grid directory/ template.yaml [--table] [-o outdir]
-# create grid with n points, with parameters sampled uniformly within the specified intervalls
-app-tools-create_grid parameter.json template.yaml n --mode uniform [--table] [-o outdir]
-# create grid with tuned parameters, loaded from tune directories (created with app-tune2) within specified directory
-app-tools-create_grid scan_directory/ template.yaml --mode tune [--default default.json] [--tune_tag foldertag] [-o outdir]
-# create grid with min/max values of the parameters, used to ensure a suitable parameter range
-app-tools-create_grid directory template.yaml --default default.json --mode minmax [-o outdir]
-# create an additional reweighting runcard, with nominal parameters specified in nominal.json, this also creates a variations.dat file that can be used in app-tools-split_reweighting
-app-tools-create_grid parameter.json template.yaml npoints [--reweighting nominal.json] [--seed s] [--table] [-o outdir] (--mode random)
-```
-Extract observables and write weights:
-```bash
-# creates a new weights file from specified .yoda file (this file can be used for app-build)
-app-tools-write_weights file.yoda [-o outfile]
-```
-Merge surrogate JSON files:
-```bash
-# merges all numbered .json files in a specified input directory into a single file
-app-tools-merge_surrogates directory/ [--keep_dir] [-o outfile]
-```
-Split weight files for parallel processing:
-```bash
-# splits a weight file into n files saved in the directory weight_files and writes the path to each file in weight_files.txt (outdir.txt)
-app-tools-split_weights weights.txt n [-o outdir]
-```
-Split variations in YODA files:
-```bash
-# splits the variations in a .yoda file into separate files, each containing only one variation, this allows the usage of the Apprentice script app-build, where each variations is treated as a separate run
-app-tools-split_reweighting inputdir variation_pattern [--outdir outdir] [--variations variations.dat]
-```
+Run the tools using the command line interface. To see all available options, examples and usage intructions for each tool, use the `--help` flag.
 
 ## Troubleshooting
 
