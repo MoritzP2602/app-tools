@@ -1,12 +1,12 @@
+import numpy as np
 import argparse
 import json
 import os
 import re
-from pathlib import Path
-
-import numpy as np
+import sys
 import rivet
 import yoda
+from pathlib import Path
 from tabulate import tabulate
 
 
@@ -58,6 +58,7 @@ def is_scatter(obj):
 
 def accepted_type(obj):
 	"""Check if object is a supported YODA type."""
+
 	if not hasattr(obj, "type") or not callable(obj.type):
 		return False
 	if is_estimate(obj):
@@ -108,7 +109,7 @@ class YodaLoader:
 			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable path() method.")
 		
 		# --- Note ------------------------------------------------------------------------------- #
-		# For Profile objects, mkScatter() and point.errs() return errors equal to zero.           #
+		# For Profile objects, mkScatter() and point.errs() returns errors equal to zero.          #
 	    # This means, we have to use Profile specific methods in this case (tested for Profile1D). #
 		# ---------------------------------------------------------------------------------------- #
 
@@ -126,7 +127,6 @@ class YodaLoader:
 				err = bin.stdErr(dim)
 			else: err = np.nan
 			bin_dict[bin_name] = (val, err)
-
 		return bin_dict
 	
 	def extract_bins_scatter(self, obj):
@@ -149,12 +149,9 @@ class YodaLoader:
 				err = sum(p.errs(dim - 1)) / 2
 			else: err = np.nan
 			bin_dict[bin_name] = (val, err)
-
 		return bin_dict
 
-	def extract_bins(self, obj):
-		"""Dispatches to correct method based on object type."""
-		
+	def extract_bins(self, obj):	
 		if is_estimate(obj):
 			return self.extract_bins_scatter(obj)
 		elif is_scatter(obj):
@@ -252,7 +249,6 @@ class YodaLoader:
 				else:
 					bin_weight = weights_dict.get(bin_name, weights_dict.get(obs_name, 0.0))
 				obs_dict[obs_name][bin_name] = (diff, err, bin_weight)
-
 		return obs_dict
 
 	def get_valid_bins(self, up_file, dn_file, weights_dict=None, analyses_set=None, debug=False):
@@ -342,47 +338,7 @@ class YodaLoader:
 
 		if debug: print(f"  Envelope validation: {len(valid_bins_list)} valid bins, "
 				  		f"{len(invalid_bins_list)} invalid bins (total: {len(valid_bins_list) + len(invalid_bins_list)})")
-
 		return valid_bins_list
-	
-
-def obs_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
-	"""Compute reduced chi2 per observable path."""
-
-	if debug: print("Executing obs_chi2")
-
-	chi2_dict = {}
-	for obs, bins in obs_dict.items():
-		chi2_sum = 0.0
-		ndf_sum  = 0.0
-
-		if debug: print(f"  Processing observable {obs} with {len(bins)} bins.")
-		for bin_name, (diff, err, weight) in bins.items():
-			if valid_bins is not None and bin_name not in valid_bins:
-				if debug: print(f"    Skipping bin {bin_name}. Not in valid (enveloped) bins list.")
-				continue
-			if err == 0 or np.isnan(err):
-				if debug: print(f"    Skipping bin {bin_name}. Invalid error {err}.")
-				continue
-			if weight <= 0 or np.isnan(weight):
-				if debug: print(f"    Skipping bin {bin_name}. NaN or zero weight {weight}.")
-				continue
-
-			term = (diff ** 2) / err ** 2
-			if not np.isfinite(term):
-				if debug: print(f"    Skipping bin {bin_name}. Non-finite term encountered.")
-				continue
-			if weighted:
-				chi2_sum += (weight ** 2) * term
-				ndf_sum  += weight ** 2
-			else:
-				chi2_sum += term
-				ndf_sum  += 1.0
-
-		chi2_dict[obs] = (chi2_sum, ndf_sum)
-		if debug: print(f"  Results for observable {obs}: chi2: {chi2_dict[obs][0]}, ndf: {chi2_dict[obs][1]}.")
-
-	return chi2_dict
 
 
 def global_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
@@ -419,12 +375,68 @@ def global_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
 				chi2_sum += term
 				ndf_sum  += 1.0
 	if debug: print(f"  Global chi2: {chi2_sum}, ndf: {ndf_sum}.")
-
 	return chi2_sum, ndf_sum
 
 
+def obs_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
+	"""Compute reduced chi2 per observable path."""
+
+	if debug: print("Executing obs_chi2")
+
+	chi2_dict = {}
+	for obs, bins in obs_dict.items():
+		chi2_sum = 0.0
+		ndf_sum  = 0.0
+
+		if debug: print(f"  Processing observable {obs} with {len(bins)} bins.")
+		for bin_name, (diff, err, weight) in bins.items():
+			if valid_bins is not None and bin_name not in valid_bins:
+				if debug: print(f"    Skipping bin {bin_name}. Not in valid (enveloped) bins list.")
+				continue
+			if err == 0 or np.isnan(err):
+				if debug: print(f"    Skipping bin {bin_name}. Invalid error {err}.")
+				continue
+			if weight <= 0 or np.isnan(weight):
+				if debug: print(f"    Skipping bin {bin_name}. NaN or zero weight {weight}.")
+				continue
+
+			term = (diff ** 2) / err ** 2
+			if not np.isfinite(term):
+				if debug: print(f"    Skipping bin {bin_name}. Non-finite term encountered.")
+				continue
+			if weighted:
+				chi2_sum += (weight ** 2) * term
+				ndf_sum  += weight ** 2
+			else:
+				chi2_sum += term
+				ndf_sum  += 1.0
+
+		chi2_dict[obs] = (chi2_sum, ndf_sum)
+		if debug: print(f"  Results for observable {obs}: chi2: {chi2_dict[obs][0]}, ndf: {chi2_dict[obs][1]}.")
+	return chi2_dict
+
+
+def analyses_chi2(obs_chi2s, debug=False):
+	"""Breakdown obs_chi2s by analyses."""
+
+	if debug: print("Executing analyses_chi2")
+
+	chi2_dict = {}
+	for obs_name, (chi2, ndf) in obs_chi2s.items():
+		try:
+			analysis = obs_name.split("/")[1].split(":")[0]
+		except (IndexError, AttributeError):
+			analysis = "unknown"
+		if analysis not in chi2_dict:
+			chi2_dict[analysis] = (0.0, 0.0)
+		previous_chi2, previous_ndf = chi2_dict[analysis]
+		chi2_dict[analysis] = (previous_chi2 + chi2, previous_ndf + ndf)
+	if debug: print(f"  Results for analyses breakdown: {chi2_dict}.")
+	return chi2_dict
+
+
 def process_envelope(args, loader, weights_dict, analyses_set=None):
-	"""Check whether reference values lie in [dn, up] envelope."""
+	"""Process envelope files and return valid bins."""
 
 	up_file, dn_file = args.envelope
 	loader.error_counts["Envelope"] = {}
@@ -435,7 +447,6 @@ def process_envelope(args, loader, weights_dict, analyses_set=None):
 	if not Path(dn_file).exists():
 		print(f"Error: Envelope down file '{dn_file}' does not exist!")
 		return None
-
 	try:
 		return loader.get_valid_bins(up_file, dn_file, weights_dict, analyses_set=analyses_set, debug=args.debug)
 	except Exception as e:
@@ -443,9 +454,11 @@ def process_envelope(args, loader, weights_dict, analyses_set=None):
 		return None
 
 
-def process_single_file(args, loader, input_file, 
+def process_single_file(args, loader, yoda_file, 
 						label, weights_dict=None, weighted=False, valid_bins=None, analyses_set=None):
-	obs_dict = loader.get_bin_differences(str(input_file),
+	"""Process a single YODA file and compute chi2 summary and per-observable chi2s."""
+
+	obs_dict = loader.get_bin_differences(str(yoda_file),
 		weights_dict=weights_dict, analyses_set=analyses_set, include_ref_error=True, debug=args.debug)
 
 	chi2, ndf = global_chi2(obs_dict,
@@ -457,97 +470,104 @@ def process_single_file(args, loader, input_file,
 	valid_obs = [chi2/ndf for chi2, ndf in obs_chi2s.values() if ndf > 0 and np.isfinite(chi2)]
 	avg_obs_chi2 = np.mean(valid_obs) if valid_obs else np.nan
 
-	analysis_chi2 = compute_analysis_chi2(obs_chi2s)
+	analyses_chi2s = {}
+	if "analyses" in set(args.cli_output): 
+		analyses_chi2s = analyses_chi2(obs_chi2s, debug=args.debug)
 
 	summary = {
-		"source"       : str(input_file),
+		"source"       : str(yoda_file),
 		"label"        : label,
 		"global_chi2"  : float(chi2),
 		"ndf"          : float(ndf),
 		"reduced_chi2" : float(reduced_chi2),
 		"avg_obs_chi2" : float(avg_obs_chi2),
-		"analysis_chi2": analysis_chi2
+		"analysis_chi2": analyses_chi2s
 	}
 
 	obs_rows = []
 	for obs_name, (chi2, ndf) in sorted(obs_chi2s.items()):
 		if ndf > 0 and np.isfinite(chi2):
-			obs_rows.append((str(input_file), label, obs_name, chi2, ndf))
-
+			obs_rows.append((str(yoda_file), label, obs_name, chi2, ndf))
 	return summary, obs_rows
 
 
-def collect_yoda_files(yoda_inputs, tags=None, include_subdirs=False):
-    """Collect YODA files from explicit files or a single directory input."""
+def collect_yoda_files(yoda_inputs, tags=None, labels=None, include_subdirs=False):
+	"""Collect YODA files and assign labels during collection."""
 
-    if len(yoda_inputs) == 1 and Path(yoda_inputs[0]).is_dir():
-        root = Path(yoda_inputs[0])
-        pattern = "**/*" if include_subdirs else "*"
-        files  = sorted([p for p in root.glob(f"{pattern}.yoda") if p.is_file()])
-        files += sorted([p for p in root.glob(f"{pattern}.yoda.gz") if p.is_file()])
-    else:
-        files = [Path(p) for p in yoda_inputs]
+	def build_label_from_path(path):
+		name = Path(path).name
+		if name.endswith(".yoda.gz"):
+			return name[:-len(".yoda.gz")]
+		if name.endswith(".yoda"):
+			return name[:-len(".yoda")]
+		return Path(path).stem
+	
+	def assign_label(file_path, input_index, matched_tags, label_mode):
+		if label_mode == "tag":
+			if len(matched_tags) > 1:
+				chosen = matched_tags[0]
+				print(f"Warning: file '{file_path}' matched multiple tags {matched_tags}, using first match '{chosen}'.")
+				return tag_to_label[chosen]
+			return tag_to_label[matched_tags[0]]
+		if label_mode == "input":
+			return labels[input_index]
+		return build_label_from_path(file_path)
 
-    if tags:
-        files = [f for f in files if any(tag in f.name for tag in tags)]
+	label_mode = "stem"
+	tag_to_label = {}
+	if tags:
+		if labels is not None and len(labels) == len(tags):
+			label_mode = "tag"
+			tag_to_label = dict(zip(tags, labels))
+		elif labels is not None:
+			print(f"Warning: tags count ({len(tags)}) does not match labels count ({len(labels)}), using file stems.")
+	else:
+		if labels is not None and len(labels) == len(yoda_inputs):
+			label_mode = "input"
+		elif labels is not None:
+			print(f"Warning: labels count ({len(labels)}) does not match input count ({len(yoda_inputs)}), using file stems.")
 
-    return files
+	files = []
+	assigned_labels = []
+	for input_index, raw_input in enumerate(yoda_inputs):
+		path = Path(raw_input)
+		if path.is_dir():
+			pattern = "**/*" if include_subdirs else "*"
+			candidates = sorted([p for p in path.glob(f"{pattern}.yoda") if p.is_file()])
+			candidates.extend(sorted([p for p in path.glob(f"{pattern}.yoda.gz") if p.is_file()]))
+		else:
+			candidates = [path]
 
+		for file_path in candidates:
+			if not file_path.exists():
+				print(f"Warning: file not found, skipping: {file_path}.")
+				continue
+			if not file_path.is_file():
+				print(f"Warning: input is not a file, skipping: {file_path}.")
+				continue
 
-def resolve_default_files(default_arg):
-    """Resolve default files from file path, directory path, or tag."""
-    if not default_arg:
-        return []
+			matched_tags = [t for t in tags if t in file_path.name] if tags else []
+			if tags and not matched_tags:
+				continue
+			if file_path in files:
+				print(f"Warning: the file '{file_path}' is included in multiple inputs, skipping duplicate occurrence.")
+				continue
+			files.append(file_path)
 
-    default_path = Path(default_arg)
-    if default_path.is_file():
-        return [default_path]
-    if default_path.is_dir():
-        return sorted(list(default_path.glob("*.yoda")) + list(default_path.glob("*.yoda.gz")))
-    cwd = Path(".")
-    return sorted([f for f in list(cwd.glob("*.yoda")) + list(cwd.glob("*.yoda.gz")) if default_arg in f.name])
-
-
-def build_labels(files, labels=None):
-    if labels and len(labels) == len(files):
-        return labels
-    if labels and len(labels) != len(files):
-        print(f"Warning: labels count ({len(labels)}) does not match file count ({len(files)}), using file stems.")
-
-    def build_label_from_path(path):
-        name = Path(path).name
-        if name.endswith(".yoda.gz"):
-            return name[:-len(".yoda.gz")]
-        if name.endswith(".yoda"):
-            return name[:-len(".yoda")]
-        return Path(path).stem
-
-    return [build_label_from_path(f) for f in files]
-
-
-def compute_analysis_chi2(obs_chi2s):
-	"""Breakdown obs_chi2s by analysis."""
-	analysis_chi2 = {}
-	for obs_name, (chi2, ndf) in obs_chi2s.items():
-		try:
-			analysis = obs_name.split("/")[1].split(":")[0]
-		except (IndexError, AttributeError):
-			analysis = "unknown"
-		if analysis not in analysis_chi2:
-			analysis_chi2[analysis] = (0.0, 0.0)
-		prev_chi2, prev_ndf = analysis_chi2[analysis]
-		analysis_chi2[analysis] = (prev_chi2 + chi2, prev_ndf + ndf)
-	return analysis_chi2
+			assigned_labels.append(assign_label(file_path, input_index, matched_tags, label_mode))
+	return files, assigned_labels
 
 
-def print_table(summaries, show_analyses=False):
+def print_table(summaries, show_analyses=False, show_sources=False):
+	"""Print chi2 summary table to console."""
+
 	table = []
 	chi2_dict = {"red": {}, "avg": {}}
 
 	for s in summaries:
 		table.append(
 			[
-				s["label"],
+				f"{s['label']}" if not show_sources else f"{s['source']}",
 				f"{s['global_chi2']:.3f}",
 				f"{s['ndf']:.0f}",
 				f"{s['reduced_chi2']:.3f}" if np.isfinite(s["reduced_chi2"]) else "nan",
@@ -570,7 +590,8 @@ def print_table(summaries, show_analyses=False):
 				)
 	
 	print(tabulate(table, 
-				headers=["Label", "Global chi2", "ndf", "Reduced chi2", "Average chi2"], tablefmt="simple_outline"))
+				headers=["Label" if not show_sources else "Source", "Global chi2", "ndf", "Reduced chi2", "Average chi2"], 
+				tablefmt="simple_outline"))
 	print()
 	min_red_key = min(chi2_dict["red"], key=chi2_dict["red"].get)
 	if np.isfinite(chi2_dict["red"][min_red_key]):
@@ -582,10 +603,12 @@ def print_table(summaries, show_analyses=False):
 				f"(label: {min_avg_key}, source: {s['source']})")
 	if np.isfinite(chi2_dict["red"][min_red_key]) or np.isfinite(chi2_dict["avg"][min_avg_key]):
 		print()
+	return
 
 
 def print_error_summary(loader):
 	"""Print summary of skipped observables by reason."""
+
 	print("YODA loader skips summary:")
 	for label, counts in loader.error_counts.items():
 		if len(counts) == 0:
@@ -594,28 +617,31 @@ def print_error_summary(loader):
 		for reason, count in sorted(counts.items()):
 			print(f"  {reason}: {count}")
 	print()
+	return
 
 
-def write_chi2_json(output_file, summaries, obs_stats):
+def write_chi2_json(output_file, summaries, obs_stats, command):
 	"""Write chi2 results to JSON file."""
-
-	def _safe_float(value):
-		value = float(value)
-		return value if np.isfinite(value) else None
 
 	outpath = Path(output_file)
 	outpath.parent.mkdir(parents=True, exist_ok=True)
 
+	def safe_float(x):
+		if np.isfinite(x):
+			return float(x)
+		return None
+
 	payload = {
 		"format": "CHI2JSON",
+		"command": command,
 		"summaries": [
 			{
 				"source"      : str(s["source"]),
 				"label"       : str(s["label"]),
-				"global_chi2" : _safe_float(s["global_chi2"]),
+				"global_chi2" : safe_float(s["global_chi2"]),
 				"ndf"         : int(s["ndf"]),
-				"reduced_chi2": _safe_float(s["reduced_chi2"]),
-				"avg_obs_chi2": _safe_float(s["avg_obs_chi2"]),
+				"reduced_chi2": safe_float(s["reduced_chi2"]),
+				"avg_obs_chi2": safe_float(s["avg_obs_chi2"]),
 			}
 			for s in summaries
 		],
@@ -624,9 +650,9 @@ def write_chi2_json(output_file, summaries, obs_stats):
 				"source"      : str(source),
 				"label"       : str(label),
 				"observable"  : str(obs),
-				"chi2"        : _safe_float(chi2),
+				"chi2"        : safe_float(chi2),
 				"ndf"         : int(ndf),
-				"reduced_chi2": _safe_float((chi2 / ndf) if ndf > 0 else np.nan),
+				"reduced_chi2": safe_float(chi2 / ndf),
 			}
 			for source, label, obs, chi2, ndf in obs_stats
 		],
@@ -637,6 +663,7 @@ def write_chi2_json(output_file, summaries, obs_stats):
 		f.write("\n")
 
 	print(f"Wrote chi2 JSON to {outpath}.")
+	return
 
 
 def main():
@@ -648,20 +675,19 @@ def main():
 		return 1
 
 	parser = argparse.ArgumentParser(description="Compute chi2 from YODA files and write results to a chi2.json file.")
-	parser.add_argument("yoda_files", nargs="+", help="YODA files or one directory containing YODA files")
+	parser.add_argument("yoda_files", nargs="+", help="YODA files or directories containing YODA files")
 	parser.add_argument("-w" , "--weights", default=None, help="Path to weights file")
 	parser.add_argument("-a" , "--analyses", default=None, help="Path to analyses filter file")
 	parser.add_argument("-e" , "--envelope", nargs=2, metavar=("up.yoda", "dn.yoda"), help="Envelope files for valid-bin filtering")
 	parser.add_argument("-t" , "--tags", nargs="+", default=None, help="Only keep files with matching tags (directory mode)")
-	parser.add_argument("-l" , "--labels", nargs="+", default=None, help="Labels for input YODA files (same order)")
-	parser.add_argument("-d" , "--default", default=None, help="Optional default file, directory, or tag")
-	parser.add_argument("-dl", "--default-label", default="default", help="Label for default data")
+	parser.add_argument("-l" , "--labels", nargs="+", default=None, help="Labels for inputs. With --tags: #labels must equal #tags and labels are assigned by tag match. Without --tags: #labels must equal #yoda_files arguments (directory labels are applied to all files from that input).")
 	parser.add_argument("-o" , "--output", default="chi2.json", help="Output chi2 JSON file")
 	parser.add_argument("-s" , "--subdir", action="store_true", default=False, help="Include subdirectories when input is a directory")
 	parser.add_argument("-wd", "--weighted", action="store_true", default=False, help="Use weighted chi2 computation")
-	parser.add_argument("-co", "--CLI-output", dest="cli_output", nargs="+", choices=["analyses", "errors"], default=[], help="Additional CLI output")
+	parser.add_argument("-co", "--CLI-output", dest="cli_output", nargs="+", choices=["analyses", "sources", "errors"], default=[], help="Additional CLI output")
 	parser.add_argument("-v" , "--debug", action="store_true", default=False, help="Enable debug output")
 	args = parser.parse_args()
+	command = " ".join(sys.argv)
 
 	"""Initialize YODA loader and read weights/analyses files if provided"""
 	try:
@@ -688,48 +714,31 @@ def main():
 			print("Error processing envelope files/no valid bins found.")
 			return 1
 
-	"""Collect YODA files to process, applying tags and subdir options if needed"""
-	yoda_files = collect_yoda_files(args.yoda_files, tags=args.tags, include_subdirs=args.subdir)
+	"""Collect YODA files to process, applying tags and assigning labels"""
+	yoda_files, labels = collect_yoda_files(args.yoda_files, 
+										 tags=args.tags, 
+										 labels=args.labels,
+										 include_subdirs=args.subdir)
 	if not yoda_files:
 		print("No YODA files found.")
 		return 1
-	missing = [str(path) for path in yoda_files if not path.exists()]
-	if missing:
-		for file in missing:
-			print(f"Warning: file not found, skipping: {file}.")
-	yoda_files = [path for path in yoda_files if path.exists() and path.is_file()]
-	if not yoda_files:
-		print("No valid YODA input files available.")
-		return 1
-	labels = build_labels(yoda_files, args.labels)
 
 	"""Process each YODA file and collect summaries and observable-level stats for JSON output"""
 	summaries = []
 	obs_stats = []
 
-	for yfile, label in zip(yoda_files, labels):
-		summary, obs_rows = process_single_file(args, loader, yfile, 
+	for yoda_file, label in zip(yoda_files, labels):
+		summary, obs_rows = process_single_file(args, loader, yoda_file, 
 										  label, weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins, analyses_set=analyses)
 		summaries.append(summary)
 		obs_stats.extend(obs_rows)
 
-	if args.default:
-		default_files = resolve_default_files(args.default)
-		if not default_files:
-			print(f"Warning: no default files found for '{args.default}'.")
-		else:
-			for idx, dfile in enumerate(default_files):
-				dlabel = args.default_label if len(default_files) == 1 else f"{args.default_label}_{idx+1}"
-				summary, obs_rows = process_single_file(args, loader, dfile, 
-												  dlabel, weights_dict=weights, weighted=False, valid_bins=valid_bins, analyses_set=analyses)
-				summaries.append(summary)
-				obs_stats.extend(obs_rows)
-
 	"""Print results table and write JSON output"""
-	print_table(summaries, show_analyses=("analyses" in set(args.cli_output)))
+	print_table(summaries, 
+			 show_analyses=("analyses" in set(args.cli_output)), 
+			 show_sources=("sources" in set(args.cli_output)))
 	if "errors" in set(args.cli_output): print_error_summary(loader)
-	write_chi2_json(args.output, summaries, obs_stats)
-
+	write_chi2_json(args.output, summaries, obs_stats, command)
 	return 0
 
 
