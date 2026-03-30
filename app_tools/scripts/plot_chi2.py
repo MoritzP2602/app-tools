@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import argparse
 import json
 import os
@@ -315,6 +316,12 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
                 x_axis.set_xticks(xticks)
                 x_axis.set_xticklabels(xticklabels, rotation=90, fontsize=20)
                 x_axis.set_xticks(x_positions, minor=True)
+
+            if log_scale:
+                ax.set_ylim(min(ax.get_ylim()[0], 1.0), max(ax.get_ylim()[1], 1.0))
+                ax.yaxis.set_major_locator(mticker.LogLocator(base=10.0))
+                ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext(base=10.0))
+                ax.yaxis.set_minor_formatter(mticker.NullFormatter())
 
             if has_ratio_plot:
                 ax.tick_params(axis='x', labelbottom=False)
