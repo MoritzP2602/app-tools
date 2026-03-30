@@ -3,10 +3,14 @@ import argparse
 import json
 import os
 import re
-import rivet
-import yoda
 from pathlib import Path
 from tabulate import tabulate
+
+try:
+	import rivet
+	import yoda
+except ImportError as e:
+	raise ImportError(f"Required module not found: {e.name}. Please install RIVET and YODA >= 2.1.0.") from e
 
 
 MIN_YODA = (2, 1, 0)
@@ -42,6 +46,27 @@ def read_analyses(afile):
 				continue
 			analyses.add(line)
 	return analyses
+
+
+def read_output_command(output_file):
+	"""Read previous creation command from an existing CHI2JSON output file."""
+
+	outpath = Path(output_file)
+	if not outpath.exists() or not outpath.is_file():
+		return None
+	try:
+		with outpath.open("r", encoding="utf-8") as f:
+			data = json.load(f)
+	except Exception:
+		return None
+
+	if data.get("format") != "CHI2JSON":
+		return None
+	command = data.get("command")
+	if not command:
+		return None
+	return str(command)
+
 
 def is_estimate(obj):
 	return "Estimate" in type(obj).__name__
@@ -768,6 +793,22 @@ Output:
 			 show_analyses=("analyses" in set(args.cli_output)), 
 			 show_sources=("sources" in set(args.cli_output)))
 	if "errors" in set(args.cli_output): print_error_summary(loader)
+
+	outpath = Path(args.output)
+	if outpath.exists():
+		if outpath.is_file():
+			print(f"Output file already exists.")
+			previous_cmd = read_output_command(outpath)
+			if previous_cmd:
+				print(f"  Previous output file command:")
+				print(f"    {previous_cmd}")
+			outpath.unlink()
+			print(f"  Removed existing output file: {outpath}.\n")
+		else:
+			print(f"Error: Output path exists and is not a file: {outpath}. "
+		 		  f"Please remove or specify a different output path.")
+			return 1
+
 	write_chi2_json(args.output, summaries, obs_stats, command)
 	return 0
 

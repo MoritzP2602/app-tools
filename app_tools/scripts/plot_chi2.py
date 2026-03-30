@@ -1,12 +1,13 @@
+import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import os
-import json
-import shutil
-from pathlib import Path
-import numpy as np
 import argparse
+import json
+import os
+import re
+import shutil
 import datetime
+from pathlib import Path
 
 mpl.use('Agg')
 mpl.rcParams['font.family'] = 'serif'
@@ -27,6 +28,22 @@ def to_float_or_nan(value):
     return out if np.isfinite(out) else np.nan
 
 
+def read_output_command(outdir):
+    """Read previous creation command from outdir/index.html if available."""
+    index_path = Path(outdir) / "index.html"
+    if not index_path.exists() or not index_path.is_file():
+        return None
+    try:
+        text = index_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    match = re.search(r"Created with command:\s*<pre>(.*?)</pre>", text, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    return match.group(1).strip() or None
+
+
 def read_chi2_json(path):
     """Read chi2 data from JSON file and directly build plotting structure."""
 
@@ -37,12 +54,16 @@ def read_chi2_json(path):
         raise ValueError(f"Invalid JSON format. Expected 'CHI2JSON', got '{data.get('format', 'missing')}'.")
     
     source_command = data.get("command")
-    summaries = list(data.get("summaries", []))
-    labels    = set()
-    data_dict = {}
+    summaries  = list(data.get("summaries", []))
+    labels     = []
+    series_ids = []
+    data_dict  = {}
+
     for obs in data.get("observables", []):
-        label        = obs.get("label", "unknown")
-        obs_name     = obs.get("observable", "unknown")
+        source    = obs.get("source", "unknown")
+        label     = obs.get("label", "unknown")
+        series_id = (label, source)
+        obs_name  = obs.get("observable", "unknown")
         reduced_chi2 = obs.get("reduced_chi2")
         if reduced_chi2 is None:
             chi2 = to_float_or_nan(obs.get("chi2", np.nan))
@@ -56,23 +77,16 @@ def read_chi2_json(path):
             continue
         analysis_name = parts[1]
         obs_id        = parts[2]
-        labels.add(label)
-        data_dict.setdefault(analysis_name, {}).setdefault(label, []).append((obs_id, reduced_chi2))
 
-    for analysis_name, label_map in data_dict.items():
-        for label, obs_tuples in label_map.items():
-            counts = {}
-            for obs_id, _ in obs_tuples:
-                counts[obs_id] = counts.get(obs_id, 0) + 1
-            duplicate_obs = sorted([o for o, c in counts.items() if c > 1])
-            if duplicate_obs:
-                print(f"Warning: found duplicate observable IDs for analysis '{analysis_name}', label '{label}'. "
-                      f"Later entries overwrite earlier ones in plotting. This can happen if the same label "
-                      f"is used for multiple YODA files with overlapping analyses and observables.")
-    for analysis_name, label_map in data_dict.items():
-        for label, obs_tuples in label_map.items():
+        if label not in labels:
+            labels.append(label)
+        if series_id not in series_ids:
+            series_ids.append(series_id)
+        data_dict.setdefault(analysis_name, {}).setdefault(series_id, []).append((obs_id, reduced_chi2))
+
+    for analysis_name, series_map in data_dict.items():
+        for series_id, obs_tuples in series_map.items():
             obs_ids = [o[0] for o in obs_tuples]
-
             short_ids = []
             for obs_id in obs_ids:
                 if '-' in obs_id:
@@ -80,21 +94,69 @@ def read_chi2_json(path):
                 else:
                     short_id = obs_id
                 short_ids.append(short_id)
-
             if len(set(short_ids)) == len(obs_ids):
-                label_map[label] = [(short_id, chi2_value) for (_, chi2_value), short_id in zip(obs_tuples, short_ids)]
-    return summaries, data_dict, sorted(labels), source_command
+                series_map[series_id] = [(short_id, chi2_value) for (_, chi2_value), short_id in zip(obs_tuples, short_ids)]
+    return summaries, data_dict, labels, series_ids, source_command
 
 
-def filter_labels(labels, requested_labels=None):
-    """Filter available labels from JSON file based on user requested labels."""
+def merge_chi2_json_files(json_paths):
+    """Read and merge multiple CHI2JSON files."""
+
+    merged_data_dict  = {}
+    source_commands   = []
+    merged_summaries  = []
+    merged_labels     = []
+    merged_series_ids = []
+
+    for path in json_paths:
+        summaries, data_dict, labels, series_ids, source_command = read_chi2_json(path)
+        merged_summaries.extend(summaries)
+        merged_labels.extend([label for label in labels if label not in merged_labels])
+        merged_series_ids.extend([sid for sid in series_ids if sid not in merged_series_ids])
+
+        if source_command:
+            source_commands.append(f"{path}: {source_command}")
+        else:
+            source_commands.append(f"{path}: (no command in JSON)")
+
+        for analysis_name, series_map in data_dict.items():
+            tgt_series_map = merged_data_dict.setdefault(analysis_name, {})
+            for series_id, obs_tuples in series_map.items():
+                tgt_series_map.setdefault(series_id, []).extend(obs_tuples)
+    return merged_summaries, merged_data_dict, merged_labels, merged_series_ids, source_commands
+
+
+def build_series_labels(series_ids):
+    """Build display labels and source notes for duplicate label names."""
+
+    grouped = {}
+    for sid in series_ids:
+        label, _ = sid
+        grouped.setdefault(label, []).append(sid)
+
+    series_labels = {}
+    duplicate_series_notes = []
+    for label, group in grouped.items():
+        if len(group) == 1:
+            series_labels[group[0]] = label
+            continue
+        for idx, sid in enumerate(group, start=1):
+            label_display = f"{label} ({idx})"
+            series_labels[sid] = label_display
+            duplicate_series_notes.append((label_display, sid[1]))
+    return series_labels, duplicate_series_notes
+
+
+def filter_labels(labels, series_ids, requested_labels=None):
+    """Filter labels select matching internal series IDs."""
 
     if requested_labels:
         missing = [x for x in requested_labels if x not in labels]
         if missing:
             print(f"Warning: requested labels not found in chi2.json and ignored: {missing}.")
         labels = [x for x in requested_labels if x in labels]
-    return labels
+    selected_series_ids = [sid for sid in series_ids if sid[0] in labels]
+    return labels, selected_series_ids
 
 
 def extract_numeric_sort_key(obs_id):
@@ -107,7 +169,8 @@ def extract_numeric_sort_key(obs_id):
     return (float('inf'),)
 
 
-def plot_chi2_per_analysis(data_dict, labels, default_label=None, log_scale=False, output_dir='chi2-plots'):
+def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=None,
+                           log_scale=False, output_dir='chi2-plots'):
     """Create one plot per analysis showing chi2/ndf for each observable."""
 
     os.makedirs(output_dir, exist_ok=True)
@@ -118,19 +181,28 @@ def plot_chi2_per_analysis(data_dict, labels, default_label=None, log_scale=Fals
         if not analysis_data:
             continue
 
-        plot_labels = [l for l in labels if l in analysis_data]
-        if not plot_labels:
+        plot_series = [sid for sid in series_ids if sid in analysis_data]
+        if not plot_series:
             continue
 
-        label_to_bin_data = {}
+        series_to_bin_data = {}
         all_bin_ids = set()
-        for label in plot_labels:
-            obs_list = analysis_data[label]
+        for sid in plot_series:
+            obs_list = analysis_data[sid]
             obs_list_sorted = sorted(obs_list, key=lambda x: extract_numeric_sort_key(x[0]))
             bin_data = dict(obs_list_sorted)
-            label_to_bin_data[label] = bin_data
+            series_to_bin_data[sid] = bin_data
             all_bin_ids.update(bin_data.keys())
-        default_bin_data = label_to_bin_data.get(default_label) if default_label else None
+        default_series_id = None
+        default_bin_data  = None
+        if default_label:
+            default_candidates = [sid for sid in plot_series if sid[0] == default_label]
+            if len(default_candidates) == 1:
+                default_series_id = default_candidates[0]
+                default_bin_data  = series_to_bin_data.get(default_series_id)
+            elif len(default_candidates) > 1:
+                print(f"Warning: analysis '{analysis_name}' has multiple series with default label '{default_label}'. "
+                      f"Skipping ratio subplot for this analysis.")
 
         bin_ids = sorted(all_bin_ids, key=extract_numeric_sort_key)
         n_bins  = len(bin_ids)
@@ -150,8 +222,8 @@ def plot_chi2_per_analysis(data_dict, labels, default_label=None, log_scale=Fals
             chunk_bin_ids  = bin_ids[start:end]
             bin_ids_length = max((len(str(bid)) for bid in chunk_bin_ids), default=1)
 
-            has_ratio_plot = default_bin_data is not None and len(plot_labels) > 1
-            n_legend_items = len(plot_labels)
+            has_ratio_plot = default_bin_data is not None and len(plot_series) > 1
+            n_legend_items = len(plot_series)
             ncols_legend   = min(3, n_legend_items)
             nrows_legend   = (n_legend_items + ncols_legend - 1) // ncols_legend
             
@@ -179,8 +251,8 @@ def plot_chi2_per_analysis(data_dict, labels, default_label=None, log_scale=Fals
             ax.set_yscale('log' if log_scale else 'linear')
 
             plot_index = 0
-            for label in plot_labels:
-                bin_data = label_to_bin_data[label]
+            for sid in plot_series:
+                bin_data = series_to_bin_data[sid]
                 chi2_values = [to_float_or_nan(bin_data.get(bid, np.nan)) for bid in chunk_bin_ids]
 
                 valid_indices = [j for j, val in enumerate(chi2_values) if np.isfinite(val)]
@@ -189,26 +261,27 @@ def plot_chi2_per_analysis(data_dict, labels, default_label=None, log_scale=Fals
                 valid_x    = np.array(valid_indices)
                 valid_chi2 = [chi2_values[j] for j in valid_indices]
 
-                is_default = bool(default_label and label == default_label)
+                is_default = bool(default_series_id and sid == default_series_id)
+                label      = series_labels.get(sid, sid[0])
                 if is_default:
-                    color = default_color
-                    marker = 'h'
+                    color      = default_color
+                    marker     = 'h'
                     markersize = 5
-                    linewidth = 1.5
-                    line_alpha = 0.4
-                    label_display = label if 'default' in label.lower() else f'{label} (default)'
+                    linewidth  = 1.5
+                    linealpha  = 0.4
+                    if 'default' not in label.lower():
+                        label  = f'{label} (default)'
                 else:
-                    color = colors[plot_index % len(colors)]
-                    marker = markers[plot_index % len(markers)]
+                    color      = colors[plot_index % len(colors)]
+                    marker     = markers[plot_index % len(markers)]
                     markersize = 6
-                    linewidth = 2.0
-                    line_alpha = 0.4
-                    label_display = label
+                    linewidth  = 2.0
+                    linealpha  = 0.4
                     plot_index += 1
                 ax.plot(valid_x, valid_chi2, marker=marker, linewidth=0.0,
-                        label=label_display, color=color, markersize=markersize, alpha=1.0)
+                        label=label, color=color, markersize=markersize, alpha=1.0)
                 ax.plot(valid_x, valid_chi2, linestyle='-', marker=None,
-                        color=color, linewidth=linewidth, alpha=line_alpha)
+                        color=color, linewidth=linewidth, alpha=linealpha)
 
                 if has_ratio_plot and not is_default:
                     default_values = [to_float_or_nan(default_bin_data.get(bid, np.nan)) for bid in chunk_bin_ids]
@@ -276,14 +349,16 @@ def plot_chi2_per_analysis(data_dict, labels, default_label=None, log_scale=Fals
             plt.savefig(output_file_png, format='png', dpi=600)
 
             if n_chunks == 1: 
-                print(f"Created plot for {analysis_name}: {output_file_pdf}")
+                print(f"Created plot for {analysis_name}: {output_file_pdf}/png")
             else: 
-                print(f"Created plot for {analysis_name} ({chunk_idx + 1}/{n_chunks}): {output_file_pdf}")
+                print(f"Created plot for {analysis_name} ({chunk_idx + 1}/{n_chunks}): {output_file_pdf}/png")
             plt.close(fig)
+    print()
     return
 
 
-def create_index_html(command, summaries=None, data_dict=None, labels=None, default_label=None,
+def create_index_html(command, summaries=None, data_dict=None, series_ids=None, series_labels=None,
+                      duplicate_series_notes=None, default_label=None,
                       input_file=None, source_command=None, output_dir="chi2-plots"):
     """Create an index.html file in the output directory to access all plot files."""
 
@@ -368,37 +443,31 @@ def create_index_html(command, summaries=None, data_dict=None, labels=None, defa
         html += f"""
         </table>"""
 
-    labels    = labels or []
-    data_dict = data_dict or {}
+    series_ids             = series_ids             or []
+    series_labels          = series_labels          or {}
+    duplicate_series_notes = duplicate_series_notes or []
+    data_dict              = data_dict              or {}
     for group, files in sorted(exp_analysis_groups.items()):
         html += f"""
         <h3>{group}</h3>"""
         pngs = [f for f in files if f.endswith('.png')]
         avg_entries = []
 
-        labels_for_avg = []
-        default_in_group = default_label and (default_label in data_dict.get(group, {}))
-        # if default_in_group:
-        #     labels_for_avg.append(default_label)
-        # labels_for_avg.extend([l for l in labels if l != default_label])
-        labels_for_avg.extend([l for l in labels])
-
-        for label in labels_for_avg:
-            bin_tuples = data_dict.get(group, {}).get(label, [])
+        for sid in series_ids:
+            bin_tuples = data_dict.get(group, {}).get(sid, [])
             chi2_vals = [v for _, v in bin_tuples if np.isfinite(v) and v != -1]
             avg = (sum(chi2_vals) / len(chi2_vals)) if chi2_vals else None
-            avg_entries.append((label, avg))
+            avg_entries.append((sid, avg))
 
         if any(avg is not None for _, avg in avg_entries):
             html += f"""
         <div style='font-size:1.1em; margin-bottom:0.3em;'><b>Average chi2 per YODA:</b><ul style='margin:0.2em 0 0.5em 1em;'>"""
-            for label_name, avg in avg_entries:
+            for sid, avg in avg_entries:
                 if avg is not None:
-                    if default_label and label_name == default_label:
-                        label_display = label_name if 'default' in label_name.lower() else f'{label_name} (default)'
-                    else:
-                        label_display = label_name
-                    html += f'<li>{label_display}: {avg:.2f}</li>'
+                    label = series_labels.get(sid, sid[0])
+                    if default_label and sid[0] == default_label and 'default' not in label.lower():
+                        label = f'{label} (default)'
+                    html += f'<li>{label}: {avg:.2f}</li>'
             html += '</ul></div>'
         for png in sorted(pngs):
             pdf = png.replace('.png', '.pdf')
@@ -407,6 +476,14 @@ def create_index_html(command, summaries=None, data_dict=None, labels=None, defa
             if pdf in files:
                 html += f'<a href="{pdf}">Download PDF</a>'
             html += '</div>'
+
+    if duplicate_series_notes:
+        html += """
+        <h3>Label clarification</h3>
+        <ul>"""
+        for label, source in duplicate_series_notes:
+            html += f"<li>{label}: {source}</li>"
+        html += '</ul>'
 
     html += f"""    
         <footer style="clear:both; margin-top:3em; padding-top:3em">
@@ -423,14 +500,16 @@ def create_index_html(command, summaries=None, data_dict=None, labels=None, defa
 
 
 def main():
+    print("Starting chi2 plotting...\n")
+
     parser = argparse.ArgumentParser(
         description="Plot chi2 data from a JSON file.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  plot_chi2.py chi2.json ---outdir output_directory
-  plot_chi2.py chi2.json --labels label1 label2
+  plot_chi2.py chi2.json --outdir output_directory
   plot_chi2.py chi2.json --default-label default_label --log
+  plot_chi2.py chi2_file1.json chi2_file2.json --labels label1 label2
 
 Input handling:
   - Reads results from compute_chi2.py in JSON format (CHI2JSON)
@@ -442,7 +521,7 @@ Output:
   - Output directory is overwritten if it already exists, can be specified with -o/--outdir
         """
     )
-    parser.add_argument("chi2_json", help="Input chi2.json file (from compute_chi2.py)")
+    parser.add_argument("chi2_json", nargs="+", help="Input chi2.json file(s) (from compute_chi2.py)")
     parser.add_argument("-o", "--outdir", default="chi2-plots", help="Output directory for plots")
     parser.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
     parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
@@ -454,26 +533,38 @@ Output:
     outpath = Path(args.outdir)
     if outpath.exists():
         if outpath.is_dir():
+            print(f"Output directory already exists.")
+            previous_cmd = read_output_command(outpath)
+            if previous_cmd:
+                print(f"  Previous output directory command (from index.html):")
+                print(f"    {previous_cmd}")
             shutil.rmtree(outpath)
-            print(f"Removed existing output directory: {outpath}")
+            print(f"  Removed existing output directory: {outpath}.\n")
         else:
-            outpath.unlink()
-            print(f"Removed existing output path: {outpath}")
+            print(f"Output path exists and is not a directory: {outpath}. "
+                  f"Please remove or choose a different output directory.")
+            return 1
 
-    json_path = Path(args.chi2_json)
-    if not json_path.exists():
-        print(f"Error: input file does not exist: {json_path}.")
+    json_paths = [Path(p) for p in args.chi2_json]
+    missing = [str(p) for p in json_paths if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"Error: input file does not exist: {p}.")
         return 1
 
-    summaries, data_dict, available_labels, source_command = read_chi2_json(json_path)
+    summaries, data_dict, available_labels, available_series_ids, source_commands = merge_chi2_json_files([str(p) for p in json_paths])
     if not data_dict:
-        print("Error: no observable chi2 data found in input file.")
+        print("Error: no observable chi2 data found in input file(s).")
         return 1
 
-    labels = filter_labels(available_labels, args.labels)
+    labels, series_ids = filter_labels(available_labels, available_series_ids, args.labels)
     if not labels:
         print("Error: no labels selected for plotting.")
         return 1
+    if not series_ids:
+        print("Error: selected labels do not map to any plot series.")
+        return 1
+    series_labels, duplicate_series_notes = build_series_labels(series_ids)
 
     default_label = None
     if args.default_label:
@@ -486,19 +577,21 @@ Output:
                 labels.insert(0, default_label)
 
     plot_chi2_per_analysis(data_dict, 
-                           labels,
+                           series_ids,
+                           series_labels,
                            default_label=default_label,
                            log_scale=args.log,
                            output_dir=args.outdir)
     create_index_html(command, 
                       summaries=summaries, 
                       data_dict=data_dict, 
-                      labels=labels, 
+                      series_ids=series_ids,
+                      series_labels=series_labels,
+                      duplicate_series_notes=duplicate_series_notes,
                       default_label=default_label,
-                      input_file=str(json_path),
-                      source_command=source_command,
+                      input_file=", ".join(str(p) for p in json_paths),
+                      source_command="\n".join(source_commands),
                       output_dir=args.outdir)
-    print(f"Plots written to {args.outdir}.")
     return 0
 
 
