@@ -701,7 +701,7 @@ def main():
 		return 1
 
 	parser = argparse.ArgumentParser(
-		description="Compute chi2 from YODA files and write results to a chi2.json file.",
+		description="Compute chi2 from YODA files and write results to a JSON file.",
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		epilog="""
 Examples:

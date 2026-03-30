@@ -43,14 +43,14 @@ This package automatically installs:
 ## Tools
 
 ### Python Scripts:
-- `app-tools-compute_chi2`: Compute chi-squared statistics and write results to `chi2.json`
-- `app-tools-plot_chi2`: Plot chi-squared results from `chi2.json` and generate an HTML report
-- `app-tools-combine_weights`: Scale and combine weight files
-- `app-tools-create_grid`: Generate parameter grids (enhanced version of app-sample)
-- `app-tools-merge_surrogates`: Merge multiple surrogate JSON files
-- `app-tools-split_reweighting`: Split variations in YODA files in separate files
-- `app-tools-split_weights`: Split weight files for parallel processing
-- `app-tools-write_weights`: Extract observables from YODA files and write weights file
+- `app-tools-compute_chi2`: Compute chi2 from YODA files and write results to a JSON file.
+- `app-tools-plot_chi2`: Plot chi2 data from a JSON file and generate an HTML report.
+- `app-tools-create_grid`: Sample and create templates for parameter grid generation (improved version of app-sample).
+- `app-tools-split_reweighting`: Split variations in YODA files in separate files.
+- `app-tools-write_weights`: Extract observables from YODA file and write weights.
+- `app-tools-combine_weights`: Scale and combine weights files.
+- `app-tools-split_weights`: Split weight files into multiple files for parallel processing.
+- `app-tools-merge_surrogates`:Merge multiple surrogate JSON files into a single file.
 
 ## Usage
 

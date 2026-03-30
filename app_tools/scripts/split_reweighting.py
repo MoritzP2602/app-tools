@@ -229,7 +229,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Split YODA files by their reweighted variations.',
+        description='Split variations in YODA files in separate files.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

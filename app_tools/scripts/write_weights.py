@@ -28,7 +28,7 @@ class yodaLoader:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract observables from YODA file and write weights",
+        description="Extract observables from YODA file and write weights.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

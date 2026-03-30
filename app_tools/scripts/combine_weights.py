@@ -26,7 +26,7 @@ def read_weights(path, scale):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Scale and combine weights files",
+        description="Scale and combine weights files.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

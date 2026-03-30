@@ -510,7 +510,7 @@ def main():
     print("Starting chi2 plotting...\n")
 
     parser = argparse.ArgumentParser(
-        description="Plot chi2 data from a JSON file.",
+        description="Plot chi2 data from a JSON file and generate an HTML report.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
