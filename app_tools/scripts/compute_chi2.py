@@ -594,10 +594,10 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 		table.append(
 			[
 				f"{s['label']}" if not show_sources else f"{s['source']}",
-				f"{s['global_chi2']:.3f}" if np.isfinite(s["global_chi2"]) else "nan",
+				f"{s['global_chi2']}" if np.isfinite(s["global_chi2"]) else "nan",
 				f"{s['ndf']:.0f}",
-				f"{s['reduced_chi2']:.3f}" if np.isfinite(s["reduced_chi2"]) else "nan",
-				f"{s['average_chi2']:.3f}" if np.isfinite(s["average_chi2"]) else "nan",
+				f"{s['reduced_chi2']}" if np.isfinite(s["reduced_chi2"]) else "nan",
+				f"{s['average_chi2']}" if np.isfinite(s["average_chi2"]) else "nan",
 			]
 		)
 		chi2_dict["red"][s["label"]] = s["reduced_chi2"] if np.isfinite(s["reduced_chi2"]) else np.inf
@@ -607,9 +607,9 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 				table.append(
 					[
 						f"- {a}",
-						f"{s['analysis_chi2'][a][0]:.3f}",
+						f"{s['analysis_chi2'][a][0]}",
 						f"{s['analysis_chi2'][a][1]:.0f}",
-						f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1]):.3f}" \
+						f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1])}" \
 							if s['analysis_chi2'][a][1] > 0 else "nan",
 						""
 					]
@@ -617,7 +617,7 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 	
 	print(tabulate(table, 
 				headers=["Label" if not show_sources else "Source", "Global chi2", "ndf", "Reduced chi2", "Average chi2"], 
-				tablefmt="simple_outline"))
+				tablefmt="simple_outline", floatfmt=".3f", numalign="decimal"))
 	print()
 	min_red_key = min(chi2_dict["red"], key=chi2_dict["red"].get)
 	if np.isfinite(chi2_dict["red"][min_red_key]):
@@ -727,7 +727,7 @@ Labels and tags:
 Output:
   - Results are printed in a table format to the console
   - Chi2 details are written to a JSON file (default: chi2.json) with summaries and per-observable stats	
-  - Additional CLI output options for per analyses chi2 results, sources instead of labels, and error summaries	
+  - Additional output options are available using --table-output (analyses, sources) and --error-summary	
 		"""
 	)
 	parser.add_argument("yoda_files", nargs="+", help="YODA files or directories containing YODA files")
@@ -739,7 +739,8 @@ Output:
 	parser.add_argument("-o" , "--output", default="chi2.json", help="Output chi2 JSON file")
 	parser.add_argument("-s" , "--subdir", action="store_true", default=False, help="Include subdirectories when input is a directory")
 	parser.add_argument("--weighted", action="store_true", default=False, help="Use weights in chi2 computation")
-	parser.add_argument("--CLI-output", dest="cli_output", nargs="+", choices=["analyses", "sources", "errors"], default=[], help="Additional CLI output")
+	parser.add_argument("--table-output", dest="table_output", nargs="+", choices=["analyses", "sources"], default=[], help="Configure table output")
+	parser.add_argument("--error-summary", action="store_true", default=False, help="Display error summary for each file")
 	parser.add_argument("-v" , "--debug", action="store_true", default=False, help="Enable debug output")
 	args = parser.parse_args()
 	command = " ".join(os.sys.argv)
@@ -782,17 +783,20 @@ Output:
 	summaries = []
 	obs_stats = []
 
-	for yoda_file, label in zip(yoda_files, labels):
-		summary, obs_data = process_single_file(args, loader, yoda_file, 
-										  label, weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins, analyses_set=analyses)
+	total_files = len(yoda_files)
+	for idx, (yoda_file, label) in enumerate(zip(yoda_files, labels), start=1):
+		print(f"\rProcessing {idx}/{total_files} files...", end='', flush=True)
+		summary, obs_data = process_single_file(args, loader, yoda_file, label, 
+								weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins, analyses_set=analyses)
 		summaries.append(summary)
 		obs_stats.extend(obs_data)
+		print('\r' + ' ' * 50 + '\r', end='', flush=True)
 
 	"""Print results table and write JSON output"""
 	print_table(summaries, 
-			 show_analyses=("analyses" in set(args.cli_output)), 
-			 show_sources=("sources" in set(args.cli_output)))
-	if "errors" in set(args.cli_output): print_error_summary(loader)
+			 show_analyses=("analyses" in set(args.table_output)), 
+			 show_sources =("sources"  in set(args.table_output)))
+	if args.error_summary: print_error_summary(loader)
 
 	outpath = Path(args.output)
 	if outpath.exists():

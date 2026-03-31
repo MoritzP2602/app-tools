@@ -874,14 +874,12 @@ def summarize_sampling_mode(args, source_kind, model, param_list):
     npoints = len(param_list)
     sector_ids = sorted({int(p.get("_sector_id", 0)) for p in param_list})
     nsectors = len(sector_ids)
-
     if source_kind == "parameter-file":
         source_msg = f"parameter-file: {args.parameters}"
     elif source_kind == "table-file":
         source_msg = f"table-file: {args.parameters}"
     else:
         source_msg = f"existing directory: {args.parameters}"
-
     dynamic_params = []
     sectorized_params = []
 
@@ -903,15 +901,12 @@ def summarize_sampling_mode(args, source_kind, model, param_list):
     if args.mode == "random" and source_kind == "parameter-file" and args.seed is not None:
         print(f"  Random seed: {args.seed}")
     print(f"  Number of points: {npoints}")
-    
     if nsectors > 1:
         print(f"  Number of sectors: {nsectors}")
-
     if model is None and source_kind in ["table-file", "directory"]:
         print("  Dynamic parameters: unknown (input is NOT generated from parameter file)")
     elif dynamic_params:
         print("  Dynamic parameters: " + ", ".join(dynamic_params))
-
     if sectorized_params:
         print("  Sectorized parameters: " + ", ".join(sectorized_params))
     return
@@ -931,16 +926,13 @@ def summarize_non_sampling_mode(args, source_msg, tune_tag=None):
 def print_created_outputs(args, wrote_table, wrote_reweighting):
     outdir_clean = args.outdir[:-1] if args.outdir.endswith('/') else args.outdir
     outputs = [outdir_clean]
-
     if wrote_table:
         table_file = os.path.join(outdir_clean, f"{outdir_clean.split('/')[-1]}.dat")
         outputs.append(table_file)
-
     if wrote_reweighting:
         rw_dir = outdir_clean + ".rew"
         outputs.append(rw_dir)
         outputs.append(os.path.join(rw_dir, "variations.dat"))
-
     print("\nCreated outputs:")
     for path in outputs:
         print(f"  - {path}")
