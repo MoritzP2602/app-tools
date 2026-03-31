@@ -9,7 +9,6 @@ import argparse
 import itertools
 from collections import OrderedDict, defaultdict, deque
 
-
 NON_PHYSICAL_PARAM_KEYS = {"N", "_sector_id", "_sector_bounds"}
 
 
