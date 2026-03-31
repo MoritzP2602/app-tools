@@ -758,8 +758,48 @@ def write_minmax_info(outdir, info_lines, info_filename="params.dat"):
 
 
 def build_parser():
+    epilog = """
+SUBCOMMANDS:
+  sample    Sample points from parameter bounds (random or uniform)
+  import    Load points from table or existing directory
+  tune      Extract parameter sets from tune scan directory
+  minmax    Generate min/max points for each parameter
+
+Examples:
+  Sample 100 random points from parameter ranges:
+    create_grid.py sample parameters.json TEMPLATE.yaml -n 100
+  Sample points with seed and write lookup table:
+    create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --seed 42 --table
+  Generate reweighting runcards using nominal values:
+    create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --nominal nominal.json
+  Uniform grid sampling:
+    create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --sampling uniform
+  Import from existing table:
+    create_grid.py import newscan.dat TEMPLATE.yaml --nominal nominal.json -o output
+  Import from existing scan directory:
+    create_grid.py import newscan/ TEMPLATE.yaml
+  Generate runcards from tune results:
+    create_grid.py tune tunes/ TEMPLATE.yaml --tune-prefix tune_
+  Generate runcards with min/max extremes:
+    create_grid.py minmax parameters.json TEMPLATE.yaml --defaults defaults.json
+
+Advanced Features:
+  Dynamic parameter bounds (sample/minmax):
+    - JSON bounds can reference other parameters.
+    - Example: "paramA": ["paramB", 2.0] constrains paramA based on paramB's sampled value.
+  Sectorized parameters (sample only):
+    - Breakpoints define sampling sectors for specific parameters.
+    - Example: "paramC": [0.0, 1.0, 2.0] creates sectors [0.0,1.0] and [1.0,2.0],
+      distributing points uniformly across sectors.
+  Reweighting output:
+    - Use --nominal to generate reweighting runcards and variations.dat file.
+    - Supports per-sector nominal values via lists in the nominal parameter file.
+  Lookup table:
+    - Use --table to create a summary table mapping points to parameters and sectors.
+    """
+    
     parser = argparse.ArgumentParser(description="Create and export parameter grids.",
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter, epilog=epilog)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_sample = sub.add_parser("sample", help="Sample points from parameter model")
@@ -797,6 +837,65 @@ def build_parser():
     return parser
 
 
+def print_sampling_summary(args, source_kind, grid, model=None):
+    npoints = len(grid.points)
+    sector_ids = sorted({int(p.sector_id) for p in grid.points})
+    nsectors = len(sector_ids)
+
+    if source_kind == "parameter-file":
+        source_msg = f"parameter-file: {args.parameters}"
+    elif source_kind == "table-file":
+        source_msg = f"table-file: {args.input}"
+    else:
+        source_msg = f"existing directory: {args.input}"
+
+    dynamic_params = []
+    sectorized_params = []
+    if model is not None:
+        dynamic_params = [name for name, spec in model.specs.items() if spec["kind"] == "dynamic"]
+        sectorized_params = [name for name, spec in model.specs.items() if spec["kind"] == "sector"]
+    else:
+        sec_names = set()
+        for point in grid.points:
+            for name in point.sector_bounds.keys():
+                sec_names.add(name)
+        sectorized_params = sorted(sec_names)
+
+    print("Run summary:")
+    if args.command == "sample":
+        print(f"  Mode: {args.sampling}")
+    else:
+        print("  Mode: import")
+    print(f"  Parameter source: {source_msg}")
+    if getattr(args, "nominal", None):
+        print(f"  Nominal source: {args.nominal}")
+    if args.command == "sample" and args.sampling == "random" and args.seed is not None:
+        print(f"  Random seed: {args.seed}")
+    print(f"  Number of points: {npoints}")
+    if nsectors > 1:
+        print(f"  Number of sectors: {nsectors}")
+    if model is None and source_kind in ["table-file", "directory"]:
+        print("  Dynamic parameters: unknown (input is NOT generated from parameter file)")
+    elif dynamic_params:
+        print("  Dynamic parameters: " + ", ".join(dynamic_params))
+    if sectorized_params:
+        print("  Sectorized parameters: " + ", ".join(sectorized_params))
+    print()
+    return
+
+
+def print_non_sampling_summary(command, source_msg, defaults=None, tune_prefix=None):
+    print("Run summary:")
+    print(f"  Mode: {command}")
+    print(f"  Parameter source: {source_msg}")
+    if defaults:
+        print(f"  Default source: {defaults}")
+    if tune_prefix:
+        print(f"  Tune prefix: {tune_prefix}")
+    print()
+    return
+
+
 def print_outputs(outdir, wrote_table=False, wrote_reweighting=False):
     outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
     outputs = [outdir_clean]
@@ -807,15 +906,17 @@ def print_outputs(outdir, wrote_table=False, wrote_reweighting=False):
         outputs.append(rw_dir)
         outputs.append(os.path.join(rw_dir, "variations.dat"))
 
-    print("\nCreated outputs:")
+    print("Created outputs:")
     for p in outputs:
         print(f"  - {p}")
     return
 
 
 def main():
+    print("Starting grid generation...\n")
+
     parser = build_parser()
-    args = parser.parse_args()
+    args   = parser.parse_args()
 
     if args.command == "sample":
         confirm_overwrite(args.outdir)
@@ -832,6 +933,7 @@ def main():
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, args.outdir.rstrip("/") + ".rew")
             wrote_reweighting = True
+        print_sampling_summary(args, source_kind="parameter-file", grid=grid, model=model)
         print_outputs(args.outdir, wrote_table, wrote_reweighting)
         return
 
@@ -841,11 +943,12 @@ def main():
 
         if os.path.isdir(args.input):
             grid = ParameterGrid.from_directory(args.input, limit=args.num_points)
+            source_kind = "directory"
         elif os.path.isfile(args.input) and args.input.endswith(".dat"):
             grid = ParameterGrid.from_table(args.input)
+            source_kind = "table-file"
         else:
             fail("Import input must be a directory or a .dat table file")
-
         grid.write_scan(args.outdir, template_name, template_content)
 
         wrote_table       = False
@@ -856,20 +959,23 @@ def main():
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, args.outdir.rstrip("/") + ".rew")
             wrote_reweighting = True
+        print_sampling_summary(args, source_kind=source_kind, grid=grid, model=None)
         print_outputs(args.outdir, wrote_table, wrote_reweighting)
         return
 
     if args.command == "tune":
         template_name, template_content = load_template(args.template)
-        run_tune_mode(
-            scan_dir=args.scan_dir,
+        run_tune_mode(scan_dir=args.scan_dir,
             template_name=template_name,
             template_content=template_content,
             tune_prefix=args.tune_prefix,
             defaults_path=args.defaults,
             outdir=args.outdir,
-            precision=args.precision,
-        )
+            precision=args.precision)
+        print_non_sampling_summary(command="tune",
+            source_msg=f"existing directory: {args.scan_dir}",
+            defaults=args.defaults,
+            tune_prefix=args.tune_prefix)
         print_outputs(args.outdir, wrote_table=False, wrote_reweighting=False)
         return
 
@@ -882,6 +988,9 @@ def main():
         grid, info_lines = ParameterGrid.from_minmax(model, defaults)
         grid.write_scan(args.outdir, template_name, template_content)
         write_minmax_info(args.outdir, info_lines, info_filename="params.dat")
+        print_non_sampling_summary(command="minmax",
+            source_msg=f"parameter-file: {args.parameters}",
+            defaults=args.defaults,)
         print_outputs(args.outdir, wrote_table=False, wrote_reweighting=False)
         return
 
