@@ -27,7 +27,31 @@ class yodaLoader:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract observables from YODA file and write weights")
+    parser = argparse.ArgumentParser(
+        description="Extract observables from YODA file and write weights.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  write_weights.py output.yoda -o weights.txt
+  write_weights.py output.yoda --bins -o weights_by_bin.txt
+
+This script reads a YODA file and extracts all observables, writing a weight
+file with one weight entry per observable (or per bin if --bins is used).
+
+Output format (default):
+  /ATLAS_Analysis/d01-x01-y01 1.0  # bins: 20
+  /ATLAS_Analysis/d02-x01-y01 1.0  # bins: 15
+  ...
+
+Output format (with --bins):
+  /ATLAS_Analysis/d01-x01-y01#0 1.0  # bin 1
+  /ATLAS_Analysis/d01-x01-y01#1 1.0  # bin 2
+  /ATLAS_Analysis/d01-x01-y01#2 1.0  # bin 3
+  ...
+
+Warnings are printed for observables that cannot be found in Rivet references.
+        """
+    )
     parser.add_argument("yoda_file", help="YODA file to process")
     parser.add_argument("-o", "--output", default="weights.txt", help="Output weights file name (default: weights.txt)")
     parser.add_argument("--bins", action="store_true", help="List all bins of all observables instead of just observables")

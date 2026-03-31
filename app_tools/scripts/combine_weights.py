@@ -25,7 +25,39 @@ def read_weights(path, scale):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Scale and combine weights files")
+    parser = argparse.ArgumentParser(
+        description="Scale and combine weights files.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  combine_weights.py weights1.txt 1.0 weights2.txt 2.5 -o combined.txt
+  combine_weights.py w1.txt 0.5 w2.txt 1.5 w3.txt 2.0
+
+This script reads multiple weight files, scales each by a factor, and combines
+them into a single output file. Each weight line format is:
+  observable_name weight_value [optional_comment]
+
+Scaling example:
+  Input file 1:
+    /ATLAS_Analysis/d01-x01-y01 1.0  # bins: 20
+    /ATLAS_Analysis/d02-x01-y01 1.0  # bins: 15
+    ...
+  Input file 2:
+    /CMS_Analysis/d07-x01-y01 1.0  # bins: 12
+    /CMS_Analysis/d08-x01-y01 1.0  # bins: 18
+    ...
+  
+  Command: combine_weights.py file1.txt 2.0 file2.txt 0.5 -o out.txt
+  
+  Output:
+    /ATLAS_Analysis/d01-x01-y01 2.0  # bins: 20
+    /ATLAS_Analysis/d02-x01-y01 2.0  # bins: 15
+    ...
+    /CMS_Analysis/d07-x01-y01 0.5  # bins: 12
+    /CMS_Analysis/d08-x01-y01 0.5  # bins: 18
+    ...
+        """
+    )
     parser.add_argument("files_and_scales", nargs="+", help="Alternating file and scale pairs: file1 scale1 [file2 scale2 ...]")
     parser.add_argument("-o", "--output", default="weights.txt", help="Output file name (default: weights.txt)")
     

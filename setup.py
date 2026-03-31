@@ -8,10 +8,10 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="app-tools",
-    version="1.1.2",
+    version="2.0.0",
     author="Moritz Pabst",
     author_email="moritz.pabst@stud.uni-goettingen.de",
-    description="Tools for working with Apprentice",
+    description="Additional tools for working with the Apprentice tuning tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/MoritzP2602/app-tools",
@@ -30,17 +30,15 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "app-tools-chi_squared=app_tools.scripts.chi_squared:main",
+            "app-tools-compute_chi=app_tools.scripts.compute_chi2:main",
+            "app-tools-plot_chi2=app_tools.scripts.plot_chi2:main",
             "app-tools-combine_weights=app_tools.scripts.combine_weights:main",
             "app-tools-create_grid=app_tools.scripts.create_grid:main",
             "app-tools-merge_surrogates=app_tools.scripts.merge_surrogates:main",
-            "app-tools-split_reweighted_runs=app_tools.scripts.split_reweighted_runs:main",
+            "app-tools-split_reweighted_runs=app_tools.scripts.split_reweighting:main",
             "app-tools-split_weights=app_tools.scripts.split_weights:main",
             "app-tools-write_weights=app_tools.scripts.write_weights:main",
         ],
     },
-    scripts=[
-        "app_tools/scripts/app-tools-yodamerge_directories",
-    ],
     include_package_data=True,
 )

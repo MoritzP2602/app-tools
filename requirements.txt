@@ -3,6 +3,6 @@ matplotlib>=3.3.0
 tabulate>=0.8.0
 
 # External dependencies (must be installed separately):
-# YODA >= 1.8.0
-# Rivet >= 3.0.0
+# YODA >= 2.1.0
+# Rivet >= 4.1.0
 # Install from https://gitlab.com/hepcedar/rivetbootstrap

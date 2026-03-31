@@ -1,7 +1,7 @@
 """
-App Tools - tools for working with apprentice
+App Tools - Additional tools for working with the Apprentice tuning tool
 """
 
-__version__ = "1.1.2"
+__version__ = "2.0.0"
 __author__ = "Moritz Pabst"
 __email__ = "moritz.pabst@stud.uni-goettingen.de"

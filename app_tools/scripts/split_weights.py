@@ -52,7 +52,29 @@ def split_weight_file(input_path, n, out_dir=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Split weight files into multiple files for parallel processing.")
+    parser = argparse.ArgumentParser(
+        description="Split weight files into multiple files for parallel processing.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  split_weights.py weights.txt 4 -o parallel_weights
+  split_weights.py all_observables.txt 10
+
+This script splits a weight file into N roughly equal files for parallel processing.
+Each output file contains a subset of the observables, with balanced distribution.
+
+Output structure:
+  weight_files/  (directory containing split files)
+    00
+    01
+    02
+    ...
+  weight_files.txt  (file listing paths to all weight files, one per line)
+
+Note: Bin-specific weights (containing '#') are filtered out from the split.
+Only observable-level weights are included.
+        """
+    )
     parser.add_argument("input_file", help="Path to the weight file")
     parser.add_argument("n", type=int, help="Number of output files")
     parser.add_argument("-o", "--output", help="Name for output directory (default: weight_files)")
