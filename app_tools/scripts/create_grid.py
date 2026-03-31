@@ -1,248 +1,39 @@
 
+import numpy as np
 import os
 import sys
 import glob
 import json
 import re
-import numpy as np
 import argparse
 import itertools
+from dataclasses import dataclass, field
 from collections import OrderedDict, defaultdict, deque
 
-NON_PHYSICAL_PARAM_KEYS = {"N", "_sector_id", "_sector_bounds"}
 
-
-def write_params(param_list, template_name, template_content, outdir, fname="params.dat"):
-    if not param_list:
-        print("Error: No parameters to write!")
-        sys.exit(1)
-        
-    for num, params in enumerate(param_list):
-        npad = f"{num}".zfill(1 + int(np.ceil(np.log10(len(param_list)))))
-        outd = os.path.join(outdir, npad)
-        outf = os.path.join(outd, fname)
-
-        if not os.path.exists(outd):
-            os.makedirs(outd)
-
-        with open(outf, "w") as pf:
-            for key, value in sorted(params.items(), key=lambda kv: kv[0]):
-                if key in NON_PHYSICAL_PARAM_KEYS or key.startswith("_"):
-                    continue
-                pf.write(f"{key} {float(value):e}\n")
-
-        params["N"] = npad
-        template_params = {k: v for k, v in params.items() \
-                            if (k not in NON_PHYSICAL_PARAM_KEYS and not k.startswith("_"))}
-        txt = template_content.format(**template_params)
-        tname = os.path.join(outd, template_name)
-        with open(tname, "w") as tf:
-            tf.write(txt)
-
-
-def load_params_from_folders(outdir="newscan", fname="params.dat", npoints=None):
-    if not os.path.exists(outdir):
-        print(f"Error: Directory '{outdir}' not found!")
-        sys.exit(1)
-        
-    param_dicts = []
-    subfolders = sorted([d for d in os.listdir(outdir) if os.path.isdir(os.path.join(outdir, d))])
-    
-    if npoints is not None:
-        if len(subfolders) < npoints:
-            print(f"Error: Only {len(subfolders)} subfolders found, but {npoints} requested")
-            sys.exit(1)
-        subfolders = subfolders[:npoints]
-    
-    for sub in subfolders:
-        param_file = os.path.join(outdir, sub, fname)
-        if not os.path.exists(param_file):
-            continue
-        params = {}
-        try:
-            with open(param_file, "r") as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        key, val = parts[0], parts[1]
-                        params[key] = float(val)
-        except (ValueError, IOError) as e:
-            print(f"Warning: Error reading {param_file}: {e}.")
-            continue
-        if params:
-            params["_sector_id"]     = 0
-            params["_sector_bounds"] = OrderedDict()
-            param_dicts.append(params)
-    if not param_dicts:
-        print(f"Error: No valid parameter files found in '{outdir}'!")
-        sys.exit(1)
-    return param_dicts
-
-
-def extract_params_from_minimum_file(filepath):
-    if not os.path.exists(filepath):
-        print(f"Error: File '{filepath}' not found!")
-        return {}
-        
-    params = {}
-    try:
-        with open(filepath) as f:
-            lines = f.readlines()
-    except IOError as e:
-        print(f"Error: Cannot read file '{filepath}': {e}!")
-        return {}
-        
-    for line in lines:
-        if line.startswith("#"):
-            continue
-        parts = line.split()
-        if len(parts) >= 2:
-            key = parts[0]
-            try:
-                val = float(parts[1])
-                params[key] = val
-            except ValueError:
-                continue
-        else:
-            break
-    return params
-
-
-def tune_mode(scan_dir, template_name, template_content, tune_tag, 
-              defaults_path=None, outdir="newscan", precision=3):
-    if not os.path.exists(scan_dir):
-        print(f"Error: Scan directory '{scan_dir}' not found!")
-        sys.exit(1)
-        
-    defaults = None
-    if defaults_path is not None:
-        if not os.path.exists(defaults_path):
-            print(f"Error: Defaults file '{defaults_path}' not found!")
-            sys.exit(1)
-        try:
-            with open(defaults_path, "r") as f:
-                defaults = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Error: Cannot read defaults file '{defaults_path}': {e}!")
-            sys.exit(1)
-
-    out_base = os.path.join(outdir)
-    os.makedirs(out_base, exist_ok=True)
-
-    if defaults is not None:
-        out_dir = os.path.join(out_base, "default")
-        os.makedirs(out_dir, exist_ok=True)
-        out_file = os.path.join(out_dir, template_name)
-        try:
-            filled = template_content.format(**defaults)
-        except KeyError as e:
-            print(f"Error: Missing parameter {e} in defaults file!")
-            sys.exit(1)
-        with open(out_file, "w") as f:
-            f.write(filled)
-        print(f"Wrote default values to {out_file}.")
-
-    tune_subdirs = sorted([d for d in os.listdir(scan_dir) 
-                          if tune_tag in d and os.path.isdir(os.path.join(scan_dir, d))])
-
-    if not tune_subdirs:
-        print(f"Error: No {tune_tag}* subdirectories found in '{scan_dir}'!")
-        sys.exit(1)
-
-    for subdir in tune_subdirs:
-        full_subdir = os.path.join(scan_dir, subdir)
-        min_files = glob.glob(os.path.join(full_subdir, "minimum_*.txt"))
-        tune_dat = os.path.join(full_subdir, "tune.dat")
-        
-        if min_files:
-            min_file = min_files[0]
-        elif os.path.exists(tune_dat):
-            min_file = tune_dat
-        else:
-            continue
-            
-        params = extract_params_from_minimum_file(min_file)
-        if not params:
-            print(f"Warning: No parameters found in {min_file}, skipping...")
-            continue
-        if precision is not None:
-            params = {k: round(v, precision) for k, v in params.items()}
-
-        out_dir = os.path.join(out_base, subdir)
-        if os.path.exists(out_dir):
-            print(f"Skipping {out_dir} (already exists)...")
-            continue
-        os.makedirs(out_dir, exist_ok=True)
-        out_file = os.path.join(out_dir, template_name)
-
-        try:
-            filled = template_content.format(**params)
-        except KeyError as e:
-            print(f"Error: Missing parameter {e} for {min_file}!")
-            continue
-
-        with open(out_file, "w") as f:
-            f.write(filled)
-        print(f"Wrote {out_file}.")
-    return
-
-
-def minmax_mode(boxdef, defaults_path, template_name, template_content, 
-                outdir="newscan", infofile_path=None):
-    model = ParameterModel.from_file(boxdef)
-
-    for name, spec in model.specs.items():
-        if spec["kind"] != "range":
-            print(f"Error: minmax mode only supports fixed [min,max] ranges. "
-                  f"Parameter '{name}' is '{spec['kind']}'.")
-            sys.exit(1)
-
-    if not os.path.exists(defaults_path):
-        print(f"Error: Defaults file '{defaults_path}' not found!")
-        sys.exit(1)
-        
-    try:
-        with open(defaults_path, "r") as f:
-            defaults = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error: Cannot read defaults file '{defaults_path}': {e}!")
-        sys.exit(1)
-
-    param_order = sorted(model.specs.keys())
-    param_sets  = []
-    info_lines  = []
-    info_pad_width = 1 + int(np.ceil(np.log10(2 * len(param_order))))
-    for idx, param_name in enumerate(param_order):
-        lo, hi = model.specs[param_name]["bounds"]
-        for bound_idx, bound_name in enumerate(["min", "max"]):
-            params = defaults.copy()
-            params[param_name] = lo if bound_idx == 0 else hi
-            param_sets.append(params)
-            info_idx = f"{2 * idx + bound_idx}".zfill(info_pad_width)
-            info_lines.append(f"{info_idx}\t{param_name}: {bound_name}")
-
-    if infofile_path is not None:
-        info_dir = os.path.dirname(infofile_path)
-        if info_dir:
-            os.makedirs(info_dir, exist_ok=True)
-        try:
-            with open(infofile_path, "w") as f:
-                f.write("# INDEX\tPARAMETER: min/max\n")
-                for line in info_lines:
-                    f.write(line + "\n")
-        except IOError as e:
-            print(f"Warning: Cannot write info file '{infofile_path}': {e}.")
-
-    write_params(param_sets, template_name, template_content, outdir)
-    return
-
+def fail(msg):
+    print(f"Error: {msg}.")
+    sys.exit(1)
 
 def is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
-
 def is_param_ref(x):
     return isinstance(x, str) and x.strip() != ""
+
+
+@dataclass
+class Sector:
+    sector_id: int
+    bounds: OrderedDict = field(default_factory=OrderedDict)
+
+
+@dataclass
+class GridPoint:
+    values: OrderedDict
+    sector_id: int = 0
+    sector_bounds: OrderedDict = field(default_factory=OrderedDict)
+    index: str = ""
 
 
 class ParameterModel:
@@ -252,14 +43,17 @@ class ParameterModel:
         self.validate_refs_and_cycles()
 
     @classmethod
-    def from_file(cls, boxdef):
-        if boxdef.endswith(".json"):
-            with open(boxdef) as f:
+    def from_file(cls, path):
+        if not os.path.exists(path):
+            fail(f"Parameter file '{path}' not found")
+
+        if path.endswith(".json"):
+            with open(path) as f:
                 raw = json.load(f, object_pairs_hook=OrderedDict)
-            return cls(cls.parse_json_specs(raw, boxdef))
+            return cls(cls.parse_json_specs(raw, path))
 
         specs = OrderedDict()
-        with open(boxdef) as f:
+        with open(path) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -268,59 +62,48 @@ class ParameterModel:
                 if len(parts) < 3:
                     continue
                 name = parts[0]
-                lo = float(parts[1])
-                hi = float(parts[2])
+                lo, hi = float(parts[1]), float(parts[2])
                 if lo > hi:
-                    print(f"Error: Invalid bounds for '{name}' in '{boxdef}' ({lo} > {hi})!")
-                    sys.exit(1)
-                specs[name] = {"kind": "range", "bounds": [float(lo), float(hi)]}
+                    fail(f"Invalid bounds for '{name}' in '{path}' ({lo} > {hi})")
+                specs[name] = {"kind": "range", "bounds": [lo, hi]}
 
         if not specs:
-            print(f"Error: No valid parameters found in '{boxdef}'!")
-            sys.exit(1)
+            fail(f"No valid parameters found in '{path}'")
         return cls(specs)
 
     @staticmethod
-    def parse_json_specs(raw, boxdef):
-        if not isinstance(raw, dict) or len(raw) == 0:
-            print(f"Error: No valid parameters found in '{boxdef}'!")
-            sys.exit(1)
+    def parse_json_specs(raw, path):
+        if not isinstance(raw, dict) or not raw:
+            fail(f"No valid parameters found in '{path}'")
 
         specs = OrderedDict()
         for name, val in raw.items():
             if not isinstance(val, list) or len(val) < 2:
-                print(f"Error: Parameter '{name}' must be a list with at least 2 entries in '{boxdef}'!")
-                sys.exit(1)
+                fail(f"Parameter '{name}' must be a list with at least 2 entries in '{path}'")
 
             if len(val) == 2:
                 a, b = val
                 if is_number(a) and is_number(b):
                     lo, hi = float(a), float(b)
                     if lo > hi:
-                        print(f"Error: Invalid bounds for '{name}' ({lo} > {hi}) in '{boxdef}'!")
-                        sys.exit(1)
+                        fail(f"Invalid bounds for '{name}' ({lo} > {hi}) in '{path}'")
                     specs[name] = {"kind": "range", "bounds": [lo, hi]}
                     continue
 
-                if ((is_number(a) or is_param_ref(a)) and (is_number(b) or is_param_ref(b))):
+                if (is_number(a) or is_param_ref(a)) and (is_number(b) or is_param_ref(b)):
                     specs[name] = {"kind": "dynamic", "bounds": [a, b]}
                     continue
 
-                print(f"Error: Invalid bounds definition for '{name}' in '{boxdef}'!")
-                sys.exit(1)
+                fail(f"Invalid bounds definition for '{name}' in '{path}'")
 
             if all(is_number(x) for x in val):
                 points = [float(x) for x in val]
                 if any(points[i] >= points[i + 1] for i in range(len(points) - 1)):
-                    print(f"Error: Breakpoints for sectorized parameter '{name}' must be "
-                          f"strictly increasing in '{boxdef}'!")
-                    sys.exit(1)
+                    fail(f"Breakpoints for sectorized parameter '{name}' must be strictly increasing in '{path}'")
                 specs[name] = {"kind": "sector", "breakpoints": points}
                 continue
 
-            print(f"Error: Unsupported definition for parameter '{name}' in '{boxdef}'!")
-            sys.exit(1)
-
+            fail(f"Unsupported definition for parameter '{name}' in '{path}'")
         return specs
 
     def validate_refs_and_cycles(self):
@@ -340,12 +123,9 @@ class ParameterModel:
 
             for ref in refs:
                 if ref not in names:
-                    print(f"Error: Parameter '{name}' references unknown parameter '{ref}' in "
-                          f"dynamic bounds!")
-                    sys.exit(1)
+                    fail(f"Parameter '{name}' references unknown parameter '{ref}'")
                 if ref == name:
-                    print(f"Error: Parameter '{name}' cannot reference itself in dynamic bounds!")
-                    sys.exit(1)
+                    fail(f"Parameter '{name}' cannot reference itself")
                 if name not in edges[ref]:
                     edges[ref].add(name)
                     indeg[name] += 1
@@ -361,33 +141,30 @@ class ParameterModel:
                     q.append(v)
 
         if len(topo) != len(self.order):
-            print("Error: Cyclic dynamic parameter dependencies detected!")
-            sys.exit(1)
+            fail("Cyclic dynamic parameter dependencies detected")
 
         self.sampling_order = topo
+        return
 
     def has_dynamic(self):
         return any(spec["kind"] == "dynamic" for spec in self.specs.values())
 
-    def build_sector_list(self):
+    def build_sectors(self):
         sector_params = [name for name, spec in self.specs.items() if spec["kind"] == "sector"]
         if not sector_params:
-            return [{"id": 0, "bounds": OrderedDict()}]
+            return [Sector(sector_id=0, bounds=OrderedDict())]
 
         interval_options = []
         for name in sector_params:
             b = self.specs[name]["breakpoints"]
-            intervals = [(b[i], b[i + 1]) for i in range(len(b) - 1)]
-            interval_options.append(intervals)
+            interval_options.append([(b[i], b[i + 1]) for i in range(len(b) - 1)])
 
         sectors = []
-        sid = 0
-        for combo in itertools.product(*interval_options):
+        for sid, combo in enumerate(itertools.product(*interval_options)):
             bounds = OrderedDict()
             for pname, (lo, hi) in zip(sector_params, combo):
                 bounds[pname] = [float(lo), float(hi)]
-            sectors.append({"id": sid, "bounds": bounds})
-            sid += 1
+            sectors.append(Sector(sector_id=sid, bounds=bounds))
         return sectors
 
     def resolve_bound_expr(self, expr, sampled_values):
@@ -397,13 +174,10 @@ class ParameterModel:
 
     def resolve_bounds_for_param(self, param_name, sampled_values, sector_bounds):
         spec = self.specs[param_name]
-        kind = spec["kind"]
-
-        if kind == "sector":
+        if spec["kind"] == "sector":
             lo, hi = sector_bounds[param_name]
             return float(lo), float(hi)
-
-        if kind == "range":
+        if spec["kind"] == "range":
             lo, hi = spec["bounds"]
             return float(lo), float(hi)
 
@@ -413,658 +187,703 @@ class ParameterModel:
         return float(lo), float(hi)
 
 
-def allocate_points_per_sector(total, nsectors):
-    base = total // nsectors
-    rem = total % nsectors
-    return [base + (1 if i < rem else 0) for i in range(nsectors)]
+class ParameterGrid:
+    def __init__(self, points=None, parameter_order=None):
+        self.points = points or []
+        self.parameter_order = parameter_order or self._infer_parameter_order()
 
+    def _infer_parameter_order(self):
+        if not self.points:
+            return []
+        return list(self.points[0].values.keys())
 
-def sample_random_for_sector(model, npoints, sector):
-    if npoints <= 0:
-        return []
+    def parameter_names(self):
+        if self.parameter_order:
+            return list(self.parameter_order)
+        return self._infer_parameter_order()
 
-    points = []
-    for _ in range(npoints):
-        sampled = OrderedDict()
-        for name in model.sampling_order:
-            lo, hi = model.resolve_bounds_for_param(name, sampled, sector["bounds"])
-            if lo > hi:
-                print(f"Error: Invalid dynamic bounds for parameter '{name}' in "
-                      f"sector {sector['id']} ({lo} > {hi}).")
-                sys.exit(1)
-            sampled[name] = float(np.random.uniform(lo, hi))
+    @staticmethod
+    def _allocate_points_per_sector(total, nsectors):
+        base = total // nsectors
+        rem = total % nsectors
+        return [base + (1 if i < rem else 0) for i in range(nsectors)]
 
-        sampled["_sector_id"] = int(sector["id"])
-        sampled["_sector_bounds"] = sector["bounds"]
-        points.append(sampled)
+    @classmethod
+    def from_sampling(cls, model, num_points, sampling_mode="random", seed=None):
+        if num_points <= 0:
+            fail("--num-points must be a positive integer")
 
-    return points
+        if seed is not None and sampling_mode == "random":
+            np.random.seed(seed)
 
+        sectors = model.build_sectors()
+        allocation = cls._allocate_points_per_sector(num_points, len(sectors))
+        points = []
 
-def sample_uniform_for_sector(model, npoints, sector):
-    if npoints <= 0:
-        return []
-    if model.has_dynamic():
-        print("Error: uniform mode is currently incompatible with dynamic parameter bounds.")
-        sys.exit(1)
-
-    names = model.order
-    ndim = len(names)
-    n_per_dim = int(np.ceil(npoints ** (1 / ndim)))
-
-    while True:
-        grids = []
-        for name in names:
-            lo, hi = model.resolve_bounds_for_param(name, {}, sector["bounds"])
-            if n_per_dim == 1:
-                grids.append([lo])
+        for sector, n_in_sector in zip(sectors, allocation):
+            if n_in_sector <= 0:
+                continue
+            if sampling_mode == "uniform":
+                points.extend(cls._sample_uniform_for_sector(model, n_in_sector, sector))
             else:
-                step = (hi - lo) / (n_per_dim - 1)
-                grids.append([lo + i * step for i in range(n_per_dim)])
+                points.extend(cls._sample_random_for_sector(model, n_in_sector, sector))
 
-        all_points = list(itertools.product(*grids))
-        if len(all_points) >= npoints:
-            out = []
-            for tup in all_points[:npoints]:
-                d = OrderedDict(zip(names, tup))
-                d["_sector_id"] = int(sector["id"])
-                d["_sector_bounds"] = sector["bounds"]
-                out.append(d)
-            return out
-        n_per_dim += 1
+        return cls(points=points, parameter_order=model.order)
 
+    @classmethod
+    def _sample_random_for_sector(cls, model, npoints, sector):
+        points = []
+        for _ in range(npoints):
+            sampled = OrderedDict()
+            for name in model.sampling_order:
+                lo, hi = model.resolve_bounds_for_param(name, sampled, sector.bounds)
+                if lo > hi:
+                    fail(f"Invalid dynamic bounds for parameter '{name}' in sector {sector.sector_id} ({lo} > {hi})")
+                sampled[name] = float(np.random.uniform(lo, hi))
+            points.append(GridPoint(values=sampled, sector_id=sector.sector_id, sector_bounds=sector.bounds))
+        return points
 
-def sample_from_model(model, npoints, mode):
-    sectors = model.build_sector_list()
-    allocation = allocate_points_per_sector(npoints, len(sectors))
+    @classmethod
+    def _sample_uniform_for_sector(cls, model, npoints, sector):
+        if model.has_dynamic():
+            fail("uniform mode is incompatible with dynamic bounds")
 
-    points = []
-    for sector, nsec in zip(sectors, allocation):
-        if mode == "uniform":
-            points.extend(sample_uniform_for_sector(model, nsec, sector))
-        else:
-            points.extend(sample_random_for_sector(model, nsec, sector))
-    return points
+        names = model.order
+        ndim = len(names)
+        n_per_dim = int(np.ceil(npoints ** (1 / ndim)))
 
+        while True:
+            grids = []
+            for name in names:
+                lo, hi = model.resolve_bounds_for_param(name, {}, sector.bounds)
+                if n_per_dim == 1:
+                    grids.append([lo])
+                else:
+                    step = (hi - lo) / (n_per_dim - 1)
+                    grids.append([lo + i * step for i in range(n_per_dim)])
 
-def load_params_from_table(table_path):
-    params = []
-    header = None
-    current_sector = 0
-    current_sector_bounds = OrderedDict()
-    interval_bounds_by_param_and_idx = {}
+            all_points = list(itertools.product(*grids))
+            if len(all_points) >= npoints:
+                out = []
+                for tup in all_points[:npoints]:
+                    out.append(GridPoint(values=OrderedDict(zip(names, tup)),
+                            sector_id=sector.sector_id,
+                            sector_bounds=sector.bounds))
+                return out
+            n_per_dim += 1
 
-    try:
-        with open(table_path, "r") as f:
-            for raw in f:
-                line = raw.strip()
-                if not line:
-                    continue
-                if line.startswith("#"):
-                    lower = line.lower()
-                    maybe_header = line[1:].strip().split()
-                    if header is None and maybe_header and maybe_header[0].lower() == "index":
-                        header = maybe_header
+    @classmethod
+    def from_directory(cls, directory_path, params_filename="params.dat", limit=None):
+        if not os.path.isdir(directory_path):
+            fail(f"Directory '{directory_path}' not found")
+
+        points = []
+        subfolders = sorted([d for d in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, d))])
+        if limit is not None:
+            subfolders = subfolders[:limit]
+
+        for sub in subfolders:
+            param_file = os.path.join(directory_path, sub, params_filename)
+            if not os.path.exists(param_file):
+                continue
+            values = OrderedDict()
+            try:
+                with open(param_file, "r") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            values[parts[0]] = float(parts[1])
+            except (ValueError, IOError) as exc:
+                print(f"Warning: failed reading {param_file}: {exc}.")
+                continue
+
+            if values:
+                points.append(GridPoint(values=values, sector_id=0, sector_bounds=OrderedDict(), index=sub))
+
+        if not points:
+            fail(f"No valid parameter files found in '{directory_path}'")
+        return cls(points=points)
+
+    @classmethod
+    def from_table(cls, table_path):
+        if not os.path.exists(table_path):
+            fail(f"Table file '{table_path}' not found")
+
+        points = []
+        header = None
+        current_sector = 0
+        current_sector_bounds = OrderedDict()
+        interval_bounds_by_param_and_idx = {}
+
+        try:
+            with open(table_path, "r") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line:
                         continue
 
-                    if lower.startswith("# sectorized parameter"):
-                        m = re.match(r"^#\s*sectorized parameter\s+(\S+)\s*:\s*(.*)$", line, re.IGNORECASE)
-                        if m:
-                            pname = m.group(1)
-                            tail = m.group(2)
-                            idx_map = {}
-                            for idx_str, lo_str, hi_str in \
-                                re.findall(r"(\d+)\s*=\s*\[\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]", tail):
-                                try:
+                    if line.startswith("#"):
+                        lower = line.lower()
+                        maybe_header = line[1:].strip().split()
+                        if header is None and maybe_header and maybe_header[0].lower() == "index":
+                            header = maybe_header
+                            continue
+
+                        if lower.startswith("# sectorized parameter"):
+                            m = re.match(r"^#\s*sectorized parameter\s+(\S+)\s*:\s*(.*)$", line, re.IGNORECASE)
+                            if m:
+                                pname = m.group(1)
+                                tail = m.group(2)
+                                idx_map = {}
+                                for idx_str, lo_str, hi_str in re.findall(
+                                    r"(\d+)\s*=\s*\[\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]",
+                                    tail,
+                                ):
                                     idx_map[int(idx_str)] = (float(lo_str), float(hi_str))
-                                except ValueError:
-                                    pass
-                            if idx_map:
-                                interval_bounds_by_param_and_idx[pname] = idx_map
+                                if idx_map:
+                                    interval_bounds_by_param_and_idx[pname] = idx_map
+                            continue
+
+                        if lower.startswith("# sector"):
+                            parts = lower.replace(":", " ").split()
+                            try:
+                                current_sector = int(parts[2])
+                            except (ValueError, IndexError):
+                                pass
+
+                            current_sector_bounds = OrderedDict()
+                            rhs = line.split(":", 1)
+                            if len(rhs) == 2:
+                                for pname, idx_str in re.findall(r"([A-Za-z0-9_]+)\s*\(\s*(\d+)\s*\)", rhs[1]):
+                                    idx = int(idx_str)
+                                    if pname in interval_bounds_by_param_and_idx and idx in interval_bounds_by_param_and_idx[pname]:
+                                        lo, hi = interval_bounds_by_param_and_idx[pname][idx]
+                                        current_sector_bounds[pname] = [float(lo), float(hi)]
+                            continue
+
                         continue
 
-                    if lower.startswith("# sector"):
-                        parts = lower.replace(":", " ").split()
-                        try:
-                            current_sector = int(parts[2])
-                        except (ValueError, IndexError):
-                            pass
-
-                        current_sector_bounds = OrderedDict()
-                        rhs = line.split(":", 1)
-                        if len(rhs) == 2:
-                            for pname, idx_str in re.findall(r"([A-Za-z0-9_]+)\s*\(\s*(\d+)\s*\)", rhs[1]):
-                                idx = int(idx_str)
-                                if pname in interval_bounds_by_param_and_idx and \
-                                    idx in interval_bounds_by_param_and_idx[pname]:
-                                    lo, hi = interval_bounds_by_param_and_idx[pname][idx]
-                                    current_sector_bounds[pname] = [float(lo), float(hi)]
-                    continue
-
-                cols = line.split()
-                if header is None:
-                    header = cols
-                    continue
-
-                if len(cols) != len(header):
-                    print(f"Warning: Skipping malformed line in '{table_path}': {raw.rstrip()}")
-                    continue
-
-                row = dict(zip(header, cols))
-                p = OrderedDict()
-                for k, v in row.items():
-                    lk = k.lower()
-                    if lk == "index":
-                        p["N"] = v
+                    cols = line.split()
+                    if header is None:
+                        header = cols
                         continue
-                    if lk == "sector":
-                        try:
-                            current_sector = int(float(v))
-                        except ValueError:
-                            pass
+
+                    if len(cols) != len(header):
+                        print(f"Warning: Skipping malformed line in '{table_path}': {raw.rstrip()}")
                         continue
-                    p[k] = float(v)
 
-                p["_sector_id"] = int(current_sector)
-                p["_sector_bounds"] = OrderedDict((k, [v[0], v[1]]) for k, v in \
-                                                  current_sector_bounds.items())
-                params.append(p)
+                    row = dict(zip(header, cols))
+                    values = OrderedDict()
+                    idx = ""
+                    for k, v in row.items():
+                        lk = k.lower()
+                        if lk == "index":
+                            idx = v
+                            continue
+                        if lk == "sector":
+                            try:
+                                current_sector = int(float(v))
+                            except ValueError:
+                                pass
+                            continue
+                        values[k] = float(v)
 
-    except (IOError, ValueError) as e:
-        print(f"Error: Cannot parse table file '{table_path}': {e}!")
-        sys.exit(1)
+                    points.append(GridPoint(
+                            values=values,
+                            sector_id=int(current_sector),
+                            sector_bounds=OrderedDict((k, [b[0], b[1]]) for k, b in current_sector_bounds.items()),
+                            index=idx))
 
-    if not params:
-        print(f"Error: No valid parameter rows found in '{table_path}'!")
-        sys.exit(1)
-    return params
+        except (IOError, ValueError) as exc:
+            fail(f"Cannot parse table file '{table_path}': {exc}")
 
+        if not points:
+            fail(f"No valid parameter rows found in '{table_path}'")
+        return cls(points=points)
 
-def write_lookup_table(param_list, outdir):
-    if not param_list:
+    @classmethod
+    def from_minmax(cls, model, defaults):
+        for name, spec in model.specs.items():
+            if spec["kind"] != "range":
+                fail(f"minmax mode only supports fixed [min,max] ranges. '{name}' is '{spec['kind']}'")
+
+        param_order = sorted(model.specs.keys())
+        points = []
+        info_lines = []
+        info_pad_width = 1 + int(np.ceil(np.log10(2 * len(param_order))))
+
+        for idx, param_name in enumerate(param_order):
+            lo, hi = model.specs[param_name]["bounds"]
+            for bound_idx, bound_name in enumerate(["min", "max"]):
+                values = OrderedDict(defaults.copy())
+                values[param_name] = lo if bound_idx == 0 else hi
+                points.append(GridPoint(values=values, sector_id=0, sector_bounds=OrderedDict()))
+                info_idx = f"{2 * idx + bound_idx}".zfill(info_pad_width)
+                info_lines.append(f"{info_idx}\t{param_name}: {bound_name}")
+        return cls(points=points), info_lines
+
+    def assign_sequential_indices(self):
+        if not self.points:
+            return
+        pad = 1 + int(np.ceil(np.log10(len(self.points))))
+        for i, point in enumerate(self.points):
+            point.index = str(i).zfill(pad)
         return
 
-    outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
-    table_file = os.path.join(outdir_clean, f"{outdir_clean.split('/')[-1]}.dat")
-    param_names = sorted(
-        [
-            name
-            for name in param_list[0]
-            if (name not in NON_PHYSICAL_PARAM_KEYS and not name.startswith("_"))
-        ]
-    )
+    def write_scan(self, outdir, template_name, template_content, params_filename="params.dat"):
+        if not self.points:
+            fail("No points to write")
 
-    grouped = OrderedDict()
-    for p in param_list:
-        sid = int(p.get("_sector_id", 0))
-        grouped.setdefault(sid, []).append(p)
+        os.makedirs(outdir, exist_ok=True)
+        self.assign_sequential_indices()
 
-    sectorized_intervals = OrderedDict()
-    for points in grouped.values():
-        if not points:
-            continue
-        bounds = points[0].get("_sector_bounds", OrderedDict())
-        for pname, (lo, hi) in bounds.items():
-            sectorized_intervals.setdefault(pname, set()).add((float(lo), float(hi)))
+        for point in self.points:
+            point_dir = os.path.join(outdir, point.index)
+            os.makedirs(point_dir, exist_ok=True)
 
-    interval_index_by_param = OrderedDict()
-    for pname, ivals in sectorized_intervals.items():
-        ordered = sorted(ivals)
-        interval_index_by_param[pname] = {ival: idx for idx, ival in enumerate(ordered)}
+            with open(os.path.join(point_dir, params_filename), "w") as pf:
+                for key, value in sorted(point.values.items(), key=lambda kv: kv[0]):
+                    pf.write(f"{key} {float(value):e}\n")
 
-    with open(table_file, "w") as f:
-        f.write("# INDEX\tSECTOR\t" + "  ".join(param_names) + "\n\n")
+            try:
+                rendered = template_content.format(**point.values)
+            except KeyError as exc:
+                fail(f"Template parameter missing in point {point.index}: {exc}")
 
-        for pname, idx_map in interval_index_by_param.items():
-            inv = sorted([(idx, ival) for ival, idx in idx_map.items()], key=lambda x: x[0])
-            tail = ", ".join([f"{idx} = [{lo:.6e},{hi:.6e}]" for idx, (lo, hi) in inv])
-            f.write(f"# sectorized parameter {pname}: {tail}\n")
-        if interval_index_by_param: 
-            f.write("\n")
+            with open(os.path.join(point_dir, template_name), "w") as tf:
+                tf.write(rendered)
+        return
 
-        for sid, points in grouped.items():
-            sector_bounds = points[0].get("_sector_bounds", OrderedDict())
-            if sector_bounds and interval_index_by_param:
-                tokens = []
-                for pname, (lo, hi) in sector_bounds.items():
-                    idx = interval_index_by_param[pname][(float(lo), float(hi))]
-                    tokens.append(f"{pname} ({idx})")
-                f.write(f"# sector {sid}: " + " ".join(tokens) + "\n")
+    def write_lookup_table(self, outdir):
+        if not self.points:
+            return
+
+        self.assign_sequential_indices()
+        outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
+        table_file = os.path.join(outdir_clean, f"{outdir_clean.split('/')[-1]}.dat")
+        param_names = sorted(self.parameter_names())
+
+        grouped = OrderedDict()
+        for point in self.points:
+            grouped.setdefault(int(point.sector_id), []).append(point)
+
+        sectorized_intervals = OrderedDict()
+        for points in grouped.values():
+            if not points:
+                continue
+            bounds = points[0].sector_bounds
+            for pname, (lo, hi) in bounds.items():
+                sectorized_intervals.setdefault(pname, set()).add((float(lo), float(hi)))
+
+        interval_index_by_param = OrderedDict()
+        for pname, ivals in sectorized_intervals.items():
+            ordered = sorted(ivals)
+            interval_index_by_param[pname] = {ival: idx for idx, ival in enumerate(ordered)}
+
+        with open(table_file, "w") as f:
+            f.write("# INDEX\tSECTOR\t" + "  ".join(param_names) + "\n\n")
+
+            for pname, idx_map in interval_index_by_param.items():
+                inv = sorted([(idx, ival) for ival, idx in idx_map.items()], key=lambda x: x[0])
+                tail = ", ".join([f"{idx} = [{lo:.6e},{hi:.6e}]" for idx, (lo, hi) in inv])
+                f.write(f"# sectorized parameter {pname}: {tail}\n")
+            if interval_index_by_param:
+                f.write("\n")
+
+            for sid, points in grouped.items():
+                sector_bounds = points[0].sector_bounds
+                if sector_bounds and interval_index_by_param:
+                    tokens = []
+                    for pname, (lo, hi) in sector_bounds.items():
+                        idx = interval_index_by_param[pname][(float(lo), float(hi))]
+                        tokens.append(f"{pname} ({idx})")
+                    f.write(f"# sector {sid}: " + " ".join(tokens) + "\n")
+                else:
+                    f.write(f"# sector {sid}\n")
+
+                for point in points:
+                    values = [f"{float(point.values[name]):.6e}" for name in param_names]
+                    f.write(f"{point.index}\t{sid}\t" + "\t".join(values) + "\n")
+                f.write("\n")
+        return
+
+    @staticmethod
+    def _load_nominal_values(nominal_path):
+        try:
+            if nominal_path.endswith(".json"):
+                with open(nominal_path) as f:
+                    nominal_values = json.load(f)
             else:
-                f.write(f"# sector {sid}\n")
-            for p in points:
-                idx = p.get("N", "")
-                values = [f"{float(p[name]):.6e}" for name in param_names]
-                f.write(f"{idx}\t{sid}\t" + "\t".join(values) + "\n")
-            f.write("\n")
+                nominal_values = {}
+                with open(nominal_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            nominal_values[parts[0]] = float(parts[1])
+        except (json.JSONDecodeError, ValueError, IOError) as exc:
+            fail(f"Invalid nominal file format in '{nominal_path}': {exc}")
 
+        if not nominal_values:
+            fail(f"No valid parameters found in nominal file '{nominal_path}'")
+        return nominal_values
 
-def load_nominal_parameter_values(nominal_path):
-    try:
-        if nominal_path.endswith(".json"):
-            with open(nominal_path) as f:
-                nominal_values = json.load(f)
-        else:
-            nominal_values = {}
-            with open(nominal_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        nominal_values[parts[0]] = float(parts[1])
-    except (json.JSONDecodeError, ValueError, IOError) as e:
-        print(f"Error: Invalid parameter file format in '{nominal_path}': {e}!")
-        sys.exit(1)
+    def _sector_bounds_by_id(self):
+        by_id = OrderedDict()
+        for point in self.points:
+            if point.sector_id not in by_id:
+                by_id[point.sector_id] = point.sector_bounds
+        return by_id
 
-    if not nominal_values:
-        print(f"Error: No valid parameters found in '{nominal_path}'!")
-        sys.exit(1)
-    return nominal_values
+    def _prepare_nominal_values_by_sector(self, nominal_values):
+        if not self.points:
+            return {}
 
+        sector_bounds_by_id = self._sector_bounds_by_id()
+        sector_ids = list(sector_bounds_by_id.keys())
+        param_names = self.parameter_names()
 
-def get_sector_bounds_by_id(param_list):
-    by_id = OrderedDict()
-    for p in param_list:
-        sid = int(p.get("_sector_id", 0))
-        if sid not in by_id:
-            by_id[sid] = p.get("_sector_bounds", OrderedDict())
-    return by_id
+        sectorized_params = set()
+        for bounds in sector_bounds_by_id.values():
+            for name in bounds.keys():
+                sectorized_params.add(name)
 
+        intervals_by_param = {}
+        interval_index_by_param = {}
+        for pname in sectorized_params:
+            intervals = set()
+            for sid in sector_ids:
+                bounds = sector_bounds_by_id[sid]
+                if pname not in bounds:
+                    fail(f"Sector information for parameter '{pname}' is incomplete")
+                lo, hi = bounds[pname]
+                intervals.add((float(lo), float(hi)))
+            intervals_sorted = sorted(intervals)
+            intervals_by_param[pname] = intervals_sorted
+            interval_index_by_param[pname] = {interval: idx for idx, interval in enumerate(intervals_sorted)}
 
-def prepare_nominal_values_by_sector(param_list, nominal_values):
-    if not param_list:
-        return {}
+        by_sector = OrderedDict((sid, {}) for sid in sector_ids)
 
-    sector_bounds_by_id = get_sector_bounds_by_id(param_list)
-    sector_ids = list(sector_bounds_by_id.keys())
-    param_names = [
-        name
-        for name in param_list[0]
-        if (name not in NON_PHYSICAL_PARAM_KEYS and not name.startswith("_"))
-    ]
+        for pname in param_names:
+            if pname not in nominal_values:
+                fail(f"Nominal value for parameter '{pname}' is missing")
 
-    sectorized_params = set()
-    for bounds in sector_bounds_by_id.values():
-        for name in bounds.keys():
-            sectorized_params.add(name)
+            entry = nominal_values[pname]
+            is_sectorized = pname in sectorized_params
 
-    intervals_by_param = {}
-    interval_index_by_param = {}
-    for pname in sectorized_params:
-        intervals = set()
-        for sid in sector_ids:
-            bounds = sector_bounds_by_id[sid]
-            if pname not in bounds:
-                print(f"Error: Sector information for parameter '{pname}' is incomplete.")
-                sys.exit(1)
-            lo, hi = bounds[pname]
-            intervals.add((float(lo), float(hi)))
-        intervals_sorted = sorted(intervals)
-        intervals_by_param[pname] = intervals_sorted
-        interval_index_by_param[pname] = {
-            interval: idx for idx, interval in enumerate(intervals_sorted)
-        }
+            if isinstance(entry, list):
+                if len(entry) == 0 or not all(is_number(x) for x in entry):
+                    fail(f"Nominal entry for '{pname}' must be numeric or list of numeric values")
+                values = [float(x) for x in entry]
 
-    by_sector = OrderedDict((sid, {}) for sid in sector_ids)
+                if not is_sectorized:
+                    if len(values) != 1:
+                        fail(f"Parameter '{pname}' is not sectorized, but nominal list has {len(values)} values")
+                    for sid in sector_ids:
+                        by_sector[sid][pname] = values[0]
+                    continue
 
-    for pname in param_names:
-        if pname not in nominal_values:
-            print(f"Error: Nominal value for parameter '{pname}' is missing in reweighting input!")
-            sys.exit(1)
-
-        entry = nominal_values[pname]
-        is_sectorized = pname in sectorized_params
-
-        if isinstance(entry, list):
-            if len(entry) == 0 or not all(is_number(x) for x in entry):
-                print(f"Error: Nominal entry for '{pname}' must be numeric or list of numeric values!")
-                sys.exit(1)
-
-            values = [float(x) for x in entry]
-
-            if not is_sectorized:
+                n_intervals = len(intervals_by_param[pname])
                 if len(values) == 1:
                     for sid in sector_ids:
                         by_sector[sid][pname] = values[0]
+                elif len(values) == n_intervals:
+                    idx_map = interval_index_by_param[pname]
+                    for sid in sector_ids:
+                        lo, hi = sector_bounds_by_id[sid][pname]
+                        idx = idx_map[(float(lo), float(hi))]
+                        by_sector[sid][pname] = values[idx]
                 else:
-                    print(f"Error: Parameter '{pname}' is not sectorized, "
-                          f"but nominal list has {len(values)} values.")
-                    sys.exit(1)
+                    fail(
+                        f"Nominal list for sectorized parameter '{pname}' has {len(values)} values, expected 1 or {n_intervals}"
+                    )
                 continue
 
-            n_intervals = len(intervals_by_param[pname])
-            if len(values) == 1:
-                for sid in sector_ids:
-                    by_sector[sid][pname] = values[0]
-            elif len(values) == n_intervals:
-                idx_map = interval_index_by_param[pname]
-                for sid in sector_ids:
-                    lo, hi = sector_bounds_by_id[sid][pname]
-                    idx = idx_map[(float(lo), float(hi))]
-                    by_sector[sid][pname] = values[idx]
-            else:
-                print(
-                    f"Error: Nominal list for sectorized parameter '{pname}' has {len(values)} values, "
-                    f"but expected 1 or {n_intervals}."
-                )
-                sys.exit(1)
-            continue
+            if not is_number(entry):
+                fail(f"Nominal entry for '{pname}' must be numeric or list of numeric values")
 
-        if not is_number(entry):
-            print(f"Error: Nominal entry for '{pname}' must be numeric or list of numeric values!")
-            sys.exit(1)
+            for sid in sector_ids:
+                by_sector[sid][pname] = float(entry)
+        return by_sector
 
-        value = float(entry)
-        for sid in sector_ids:
-            by_sector[sid][pname] = value
-    return by_sector
+    def write_reweighting(self, nominal_path, template_name, template_content, outdir):
+        os.makedirs(outdir, exist_ok=True)
+        nominal_values = self._load_nominal_values(nominal_path)
+        nominal_by_sector = self._prepare_nominal_values_by_sector(nominal_values)
+
+        grouped = OrderedDict()
+        for point in self.points:
+            grouped.setdefault(int(point.sector_id), []).append(point)
+
+        combined = OrderedDict()
+        pad_width = 1 + int(np.ceil(np.log10(max(1, len(self.points)))))
+        for sid, points in grouped.items():
+            sector_dir = os.path.join(outdir, str(sid).zfill(pad_width))
+            os.makedirs(sector_dir, exist_ok=True)
+
+            param_dict = OrderedDict()
+            for name in self.parameter_names():
+                param_dict[name] = [float(nominal_by_sector[sid][name])]
+            for point in points:
+                for name in param_dict.keys():
+                    param_dict[name].append(float(point.values[name]))
+
+            rendered = template_content.format(**param_dict)
+            with open(os.path.join(sector_dir, template_name), "w") as tf:
+                tf.write(rendered)
+
+            if not combined:
+                combined = OrderedDict((k, []) for k in param_dict.keys())
+            for k, vals in param_dict.items():
+                combined[k].extend(vals[1:])
+
+        variations_file = os.path.join(outdir, "variations.dat")
+        with open(variations_file, "w") as f:
+            for pname, values in combined.items():
+                values_str = ", ".join([f"{float(v):e}" for v in values])
+                f.write(f"{pname} [{values_str}]\n")
+        return
 
 
-def build_reweighting_dict(points, sector_nominal_values):
-    d = OrderedDict()
-    for name in points[0]:
-        if name in NON_PHYSICAL_PARAM_KEYS or name.startswith("_"):
-            continue
-        d[name] = [float(sector_nominal_values[name])]
-    for p in points:
-        for name in d.keys():
-            d[name].append(float(p[name]))
-    return d
+def load_template(path):
+    if not os.path.exists(path):
+        fail(f"Template file '{path}' not found")
+    try:
+        with open(path, "r") as f:
+            return os.path.basename(path), f.read()
+    except IOError as exc:
+        fail(f"Cannot read template file '{path}': {exc}")
+    return
 
 
-def write_reweighting_runcards_by_sector(param_list, template_name, template_content, nominal_values, 
-                                         outdir="newscan.rew"):
+def extract_params_from_minimum_file(path):
+    if not os.path.exists(path):
+        return {}
+    params = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        params[parts[0]] = float(parts[1])
+                    except ValueError:
+                        continue
+                else:
+                    break
+    except IOError:
+        return {}
+    return params
+
+
+def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaults_path, outdir, precision):
+    if not os.path.isdir(scan_dir):
+        fail(f"Scan directory '{scan_dir}' not found")
+
     os.makedirs(outdir, exist_ok=True)
-    grouped = OrderedDict()
-    for p in param_list:
-        sid = int(p.get("_sector_id", 0))
-        grouped.setdefault(sid, []).append(p)
 
-    nominal_by_sector = prepare_nominal_values_by_sector(param_list, nominal_values)
-    combined = OrderedDict()
-    pad_width = 1 + int(np.ceil(np.log10(len(param_list))))
-    for sid, points in grouped.items():
-        sector_dir = os.path.join(outdir, str(sid).zfill(pad_width))
-        os.makedirs(sector_dir, exist_ok=True)
-        param_dict = build_reweighting_dict(points, nominal_by_sector[sid])
-        txt = template_content.format(**param_dict)
-        with open(os.path.join(sector_dir, template_name), "w") as tf:
-            tf.write(txt)
+    if defaults_path is not None:
+        if not os.path.exists(defaults_path):
+            fail(f"Defaults file '{defaults_path}' not found")
+        with open(defaults_path, "r") as f:
+            defaults = json.load(f)
+        default_dir = os.path.join(outdir, "default")
+        os.makedirs(default_dir, exist_ok=True)
+        with open(os.path.join(default_dir, template_name), "w") as f:
+            f.write(template_content.format(**defaults))
 
-        if not combined:
-            combined = OrderedDict((k, []) for k in param_dict.keys())
-        for k, vals in param_dict.items():
-            combined[k].extend(vals[1:])
-    return combined
+    tune_subdirs = sorted(
+        [d for d in os.listdir(scan_dir) if d.startswith(tune_prefix) and os.path.isdir(os.path.join(scan_dir, d))])
+    if not tune_subdirs:
+        fail(f"No '{tune_prefix}*' subdirectories found in '{scan_dir}'")
 
+    for subdir in tune_subdirs:
+        full_subdir = os.path.join(scan_dir, subdir)
+        min_files = glob.glob(os.path.join(full_subdir, "minimum_*.txt"))
+        tune_dat = os.path.join(full_subdir, "tune.dat")
 
-def write_variations_file(param_dict, outdir="newscan.rew"):
-    variations_file = os.path.join(outdir, "variations.dat")
-    with open(variations_file, "w") as f:
-        for param_name, values in param_dict.items():
-            values_str = ", ".join([f"{float(v):e}" for v in values])
-            f.write(f"{param_name} [{values_str}]\n")
+        if min_files:
+            source_file = min_files[0]
+        elif os.path.exists(tune_dat):
+            source_file = tune_dat
+        else:
+            continue
+
+        params = extract_params_from_minimum_file(source_file)
+        if not params:
+            print(f"Warning: no parameters in {source_file}, skipping")
+            continue
+
+        if precision is not None:
+            params = {k: round(v, precision) for k, v in params.items()}
+
+        target = os.path.join(outdir, subdir)
+        if os.path.exists(target):
+            print(f"Skipping {target} (already exists)")
+            continue
+        os.makedirs(target, exist_ok=True)
+
+        try:
+            rendered = template_content.format(**params)
+        except KeyError as exc:
+            print(f"Warning: missing parameter {exc} for {source_file}, skipping")
+            continue
+
+        with open(os.path.join(target, template_name), "w") as f:
+            f.write(rendered)
     return
 
 
-def validate_mode_compatibility(args, is_json, is_dat, is_directory):
-    if args.mode == "tune":
-        if not is_directory:
-            print("Error: tune mode requires a scan directory with tune_* subdirectories!")
+def confirm_overwrite(path):
+    if os.path.exists(path):
+        response = input(f"Warning: Output directory '{path}' already exists. Continue? [y/N] ")
+        if response.lower() != "y":
+            print("Aborted.")
             sys.exit(1)
-        if args.npoints is not None:
-            print("Warning: npoints argument ignored in tune mode.")
-        if args.seed is not None:
-            print("Warning: --seed argument ignored in tune mode.")
-        if args.table:
-            print("Warning: --table argument ignored in tune mode.")
-        if args.reweighting:
-            print("Warning: --reweighting argument ignored in tune mode.")
-        return
-
-    if args.mode == "minmax":
-        if not is_json:
-            print("Error: minmax mode requires a parameter file (json/txt)!")
-            sys.exit(1)
-        if not args.default:
-            print("Error: minmax mode requires --default defaults.json file!")
-            sys.exit(1)
-        if args.npoints is not None:
-            print("Warning: npoints argument ignored in minmax mode.")
-        if args.seed is not None:
-            print("Warning: --seed argument ignored in minmax mode.")
-        if args.table:
-            print("Warning: --table argument ignored in minmax mode.")
-        if args.reweighting:
-            print("Warning: --reweighting argument ignored in minmax mode.")
-        return
-
-    if args.default is not None:
-        print("Warning: --default argument ignored in random/uniform mode.")
-    if args.tune_tag is not None:
-        print("Warning: --tune_tag argument ignored in random/uniform mode.")
-    if args.precision != 3:
-        print("Warning: --precision argument ignored in random/uniform mode.")
-
-    if is_directory or is_dat:
-        if args.npoints is not None:
-            print("Warning: npoints argument ignored for directory/.dat input.")
-        if args.seed is not None:
-            print("Warning: --seed argument ignored for directory/.dat input.")
-        return
-
-    if is_json:
-        if args.npoints is None or args.npoints <= 0:
-            print("Error: npoints must be a positive integer for random/uniform "
-                  f"mode with parameter file!")
-            sys.exit(1)
-        if args.mode == "uniform" and args.seed is not None:
-            print("Warning: --seed argument ignored in uniform mode.")
-        return
-
-    print("Error: requires either a parameter file (json/txt), a table (.dat), "
-          f"or a newscan directory!")
-    sys.exit(1)
-
-
-def summarize_sampling_mode(args, source_kind, model, param_list):
-    npoints = len(param_list)
-    sector_ids = sorted({int(p.get("_sector_id", 0)) for p in param_list})
-    nsectors = len(sector_ids)
-    if source_kind == "parameter-file":
-        source_msg = f"parameter-file: {args.parameters}"
-    elif source_kind == "table-file":
-        source_msg = f"table-file: {args.parameters}"
-    else:
-        source_msg = f"existing directory: {args.parameters}"
-    dynamic_params = []
-    sectorized_params = []
-
-    if model is not None:
-        dynamic_params = [name for name, spec in model.specs.items() if spec["kind"] == "dynamic"]
-        sectorized_params = [name for name, spec in model.specs.items() if spec["kind"] == "sector"]
-    else:
-        sec_names = set()
-        for p in param_list:
-            for k in p.get("_sector_bounds", {}).keys():
-                sec_names.add(k)
-        sectorized_params = sorted(sec_names)
-
-    print("\nRun summary:")
-    print(f"  Mode: {args.mode}")
-    print(f"  Parameter source: {source_msg}")
-    if args.reweighting:
-        print(f"  Nominal source: {args.reweighting}")
-    if args.mode == "random" and source_kind == "parameter-file" and args.seed is not None:
-        print(f"  Random seed: {args.seed}")
-    print(f"  Number of points: {npoints}")
-    if nsectors > 1:
-        print(f"  Number of sectors: {nsectors}")
-    if model is None and source_kind in ["table-file", "directory"]:
-        print("  Dynamic parameters: unknown (input is NOT generated from parameter file)")
-    elif dynamic_params:
-        print("  Dynamic parameters: " + ", ".join(dynamic_params))
-    if sectorized_params:
-        print("  Sectorized parameters: " + ", ".join(sectorized_params))
     return
 
 
-def summarize_non_sampling_mode(args, source_msg, tune_tag=None):
-    print("\nRun summary:")
-    print(f"  Mode: {args.mode}")
-    print(f"  Parameter source: {source_msg}")
-    if args.default:
-        print(f"  Default source: {args.default}")
-    if tune_tag:
-        print(f"  Tune tag: {tune_tag}")
+def write_minmax_info(outdir, info_lines, info_filename="params.dat"):
+    os.makedirs(outdir, exist_ok=True)
+    info_path = os.path.join(outdir, info_filename)
+    with open(info_path, "w") as f:
+        f.write("# INDEX\tPARAMETER: min/max\n")
+        for line in info_lines:
+            f.write(line + "\n")
     return
 
 
-def print_created_outputs(args, wrote_table, wrote_reweighting):
-    outdir_clean = args.outdir[:-1] if args.outdir.endswith('/') else args.outdir
+def build_parser():
+    parser = argparse.ArgumentParser(description="Create and export parameter grids.",
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_sample = sub.add_parser("sample", help="Sample points from parameter model")
+    p_sample.add_argument("parameters", help="Parameter definition file (.json/.txt)")
+    p_sample.add_argument("template", help="Template file")
+    p_sample.add_argument("-n", "--num-points", required=True, type=int, help="Total number of points")
+    p_sample.add_argument("--sampling", choices=["random", "uniform"], default="random")
+    p_sample.add_argument("--seed", type=int, help="Random seed (random sampling only)")
+    p_sample.add_argument("-o", "--outdir", default="newscan")
+    p_sample.add_argument("-t", "--table", action="store_true", help="Write lookup table")
+    p_sample.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
+
+    p_import = sub.add_parser("import", help="Import points from table or existing directory")
+    p_import.add_argument("input", help="Input table (.dat) or directory")
+    p_import.add_argument("template", help="Template file")
+    p_import.add_argument("-n", "--num-points", type=int, help="Optional point limit when input is directory")
+    p_import.add_argument("-o", "--outdir", default="newscan")
+    p_import.add_argument("-t", "--table", action="store_true", help="Write lookup table")
+    p_import.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
+
+    p_tune = sub.add_parser("tune", help="Build templates from tune scan directory")
+    p_tune.add_argument("scan_dir", help="Directory containing tune results")
+    p_tune.add_argument("template", help="Template file")
+    p_tune.add_argument("-o", "--outdir", default="newscan")
+    p_tune.add_argument("-d", "--defaults", help="Optional defaults JSON")
+    p_tune.add_argument("--tune-prefix", default="tune_", help="Required prefix for tune subdirectories")
+    p_tune.add_argument("--precision", type=int, default=3, help="Decimal rounding for imported tune params")
+
+    p_minmax = sub.add_parser("minmax", help="Generate min/max points per parameter")
+    p_minmax.add_argument("parameters", help="Parameter definition file (.json/.txt)")
+    p_minmax.add_argument("template", help="Template file")
+    p_minmax.add_argument("-d", "--defaults", required=True, help="Defaults JSON used as baseline")
+    p_minmax.add_argument("-o", "--outdir", default="newscan")
+
+    return parser
+
+
+def print_outputs(outdir, wrote_table=False, wrote_reweighting=False):
+    outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
     outputs = [outdir_clean]
     if wrote_table:
-        table_file = os.path.join(outdir_clean, f"{outdir_clean.split('/')[-1]}.dat")
-        outputs.append(table_file)
+        outputs.append(os.path.join(outdir_clean, f"{os.path.basename(outdir_clean)}.dat"))
     if wrote_reweighting:
         rw_dir = outdir_clean + ".rew"
         outputs.append(rw_dir)
         outputs.append(os.path.join(rw_dir, "variations.dat"))
+
     print("\nCreated outputs:")
-    for path in outputs:
-        print(f"  - {path}")
+    for p in outputs:
+        print(f"  - {p}")
     return
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Sample and create templates for parameter grid generation.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  create_grid.py parameters.json TEMPLATE.yaml 20
-  create_grid.py parameters.json TEMPLATE.yaml 20 --seed 42 --table
-  create_grid.py parameters.json TEMPLATE.yaml 20 --table --reweighting nominal.json -o scan
-  create_grid.py tunes TEMPLATE.yaml --mode tune --default defaults.json
-  create_grid.py newscan.dat TEMPLATE.yaml --reweighting nominal.json -o output
-
-Modes:
-  random      Sample points randomly from parameter ranges (default)
-  uniform     Sample points on uniform grid
-  tune        Process existing scan directory with tune_* subdirectories
-  minmax      Generate min/max points for each parameter
-
-This script supports multiple input types:
-  random/uniform:
-    - Parameter file (.json or .txt): Defines parameter ranges for sampling.
-    - Table file (.dat): Load parameters from a pre-generated table (generated with --table).
-    - Existing grid: Load parameters from an existing grid.
-  tune:
-    - Directory containing tune_* subdirectories: Load tuned parameter sets.
-  minmax:
-    - Parameter file (.json or .txt): Creates min/max points for each parameter independently.
-
-For random/uniform mode, if a JSON parameter file is provided, these two features are supported:
-  Dynamic bounds: Parameter bounds can depend on other parameters
-    E.g. "paramA": ["paramB", 2.0] means paramA's bounds are [paramB, 2.0]
-  Sectorized parameters: Define sampling sectors for specific parameters
-    E.g. "paramC": [0.0, 1.0, 2.0] defines 2 sectors for paramC: [0.0, 1.0] and [1.0, 2.0]
-
-Use --table to create a lookup table for all generated points (in random/uniform mode).
-Use --reweighting nominal.json to generate reweighting runcards.
-        """
-    )
-    parser.add_argument("parameters", help="Parameter file (.json/.txt), table (.dat), newscan_dir, or scan_dir (tune mode)")
-    parser.add_argument("template", help="Template file")
-    parser.add_argument("npoints", nargs="?", type=int, help="Total points for sampling (.json/.txt in random/uniform mode)")
-    parser.add_argument("--mode", choices=["random", "uniform", "tune", "minmax"], default="random", help="Sampling mode (default: random)")
-    parser.add_argument("-s", "--seed", type=int, help="Random seed (random mode)")
-    parser.add_argument("-o", "--outdir", default="newscan", help="Output directory name (default: newscan)")
-    parser.add_argument("-t", "--table", action="store_true", help="Create a lookup table for all generated points")
-    parser.add_argument("-r", "--reweighting", help="Nominal parameter set for (sector-wise) reweighting runcards")
-    parser.add_argument("-d", "--default", help="Defaults.json file (tune/minmax mode)")
-    parser.add_argument("--tune-tag", help="Prefix for tune directories (default: tune_)")
-    parser.add_argument("--precision", type=int, default=3, help="Number of decimal places for parameters in tune mode")
+    parser = build_parser()
     args = parser.parse_args()
 
-    if not os.path.exists(args.parameters):
-        print(f"Error: Parameters input '{args.parameters}' not found!")
-        sys.exit(1)
-    if not os.path.exists(args.template):
-        print(f"Error: Template file '{args.template}' not found!")
-        sys.exit(1)
-    try:
-        with open(args.template, "r") as f:
-            template_content = f.read()
-    except IOError as e:
-        print(f"Error: Cannot read template file '{args.template}': {e}!")
-        sys.exit(1)
-    template_name = os.path.basename(args.template)
-
-    if args.mode in ["random", "uniform", "minmax"] and os.path.exists(args.outdir):
-        response = input(f"Warning: Output directory '{args.outdir}' already exists. Continue? [y/N] ")
-        if response.lower() != 'y':
-            print("Aborted.")
-            sys.exit(1)
-
-    is_directory = os.path.isdir(args.parameters)
-    is_dat       = os.path.isfile(args.parameters) and args.parameters.endswith(".dat")
-    is_json_txt  = os.path.isfile(args.parameters) and args.parameters.endswith((".json", ".txt"))
-    validate_mode_compatibility(args, is_json_txt, is_dat, is_directory)
-
-    if args.mode == "tune":
-        if args.tune_tag is None:
-            args.tune_tag = "tune_"
-        tune_mode(args.parameters, template_name, template_content, args.tune_tag, args.default, args.outdir, args.precision)
-        summarize_non_sampling_mode(args,
-                source_msg=f"existing directory: {args.parameters}",
-                tune_tag=args.tune_tag)
-        print_created_outputs(args, wrote_table=False, wrote_reweighting=False)
-        return
-    if args.mode == "minmax":
-        infofile_path = os.path.join(args.outdir, "params.dat")
-        minmax_mode(args.parameters, args.default, template_name, template_content, args.outdir, infofile_path=infofile_path)
-        summarize_non_sampling_mode(args,
-                source_msg=f"parameter-file: {args.parameters}")
-        print_created_outputs(args, wrote_table=False, wrote_reweighting=False)
-        return
-
-    model       = None
-    source_kind = None
-    if is_directory:
-        print(f"Loading parameters from: {args.parameters}...")
-        param_list = load_params_from_folders(args.parameters, npoints=args.npoints)
-        source_kind = "directory"
-    elif is_dat:
-        print(f"Loading parameters from table: {args.parameters}...")
-        param_list = load_params_from_table(args.parameters)
-        source_kind = "table-file"
-    else:
-        print("Sampling new parameters...")
-        if args.seed is not None and args.mode == "random":
-            np.random.seed(args.seed)
-            print(f"Using random seed: {args.seed}")
+    if args.command == "sample":
+        confirm_overwrite(args.outdir)
+        template_name, template_content = load_template(args.template)
         model = ParameterModel.from_file(args.parameters)
-        param_list = sample_from_model(model, args.npoints, args.mode)
-        source_kind = "parameter-file"
-    summarize_sampling_mode(args, source_kind, model, param_list)
+        grid = ParameterGrid.from_sampling(model, args.num_points, args.sampling, args.seed)
+        grid.write_scan(args.outdir, template_name, template_content)
 
-    write_params(param_list, template_name, template_content, args.outdir)
+        wrote_table       = False
+        wrote_reweighting = False
+        if args.table:
+            grid.write_lookup_table(args.outdir)
+            wrote_table = True
+        if args.nominal:
+            grid.write_reweighting(args.nominal, template_name, template_content, args.outdir.rstrip("/") + ".rew")
+            wrote_reweighting = True
+        print_outputs(args.outdir, wrote_table, wrote_reweighting)
+        return
 
-    wrote_reweighting = False
-    if args.reweighting:
-        nominal_values = load_nominal_parameter_values(args.reweighting)
-        reweight_outdir = args.outdir.rstrip("/") + ".rew"
-        combined = write_reweighting_runcards_by_sector(param_list, template_name, template_content, nominal_values, outdir=reweight_outdir)
-        write_variations_file(combined, outdir=reweight_outdir)
-        wrote_reweighting = True
-    wrote_table = False
-    if args.table:
-        write_lookup_table(param_list, args.outdir)
-        wrote_table = True
-    print_created_outputs(args, wrote_table, wrote_reweighting)
+    if args.command == "import":
+        confirm_overwrite(args.outdir)
+        template_name, template_content = load_template(args.template)
+
+        if os.path.isdir(args.input):
+            grid = ParameterGrid.from_directory(args.input, limit=args.num_points)
+        elif os.path.isfile(args.input) and args.input.endswith(".dat"):
+            grid = ParameterGrid.from_table(args.input)
+        else:
+            fail("Import input must be a directory or a .dat table file")
+
+        grid.write_scan(args.outdir, template_name, template_content)
+
+        wrote_table       = False
+        wrote_reweighting = False
+        if args.table:
+            grid.write_lookup_table(args.outdir)
+            wrote_table = True
+        if args.nominal:
+            grid.write_reweighting(args.nominal, template_name, template_content, args.outdir.rstrip("/") + ".rew")
+            wrote_reweighting = True
+        print_outputs(args.outdir, wrote_table, wrote_reweighting)
+        return
+
+    if args.command == "tune":
+        template_name, template_content = load_template(args.template)
+        run_tune_mode(
+            scan_dir=args.scan_dir,
+            template_name=template_name,
+            template_content=template_content,
+            tune_prefix=args.tune_prefix,
+            defaults_path=args.defaults,
+            outdir=args.outdir,
+            precision=args.precision,
+        )
+        print_outputs(args.outdir, wrote_table=False, wrote_reweighting=False)
+        return
+
+    if args.command == "minmax":
+        confirm_overwrite(args.outdir)
+        template_name, template_content = load_template(args.template)
+        with open(args.defaults, "r") as f:
+            defaults = json.load(f)
+        model = ParameterModel.from_file(args.parameters)
+        grid, info_lines = ParameterGrid.from_minmax(model, defaults)
+        grid.write_scan(args.outdir, template_name, template_content)
+        write_minmax_info(args.outdir, info_lines, info_filename="params.dat")
+        print_outputs(args.outdir, wrote_table=False, wrote_reweighting=False)
+        return
 
 
 if __name__ == "__main__":
