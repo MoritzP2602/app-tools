@@ -250,8 +250,24 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
                 
                 src_params = params_file if params_file and params_file.exists() else Path("/dev/null")
                 copy_and_extend_params_file(src_params if src_params.exists() else Path(), new_params_path, var_params)
-            
-            print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables from variation v{var_num}")
+
+            if subdir is not None:
+                source_str = f"{subdir.name}/{yoda_file.name}:v{var_num}"
+            else:
+                source_str = f"{yoda_file.name}:v{var_num}"
+
+            if variation_params_map:
+                point_values = []
+                for param_name in variation_params_map.keys():
+                    param_values = variation_params_map[param_name]
+                    if params_idx < len(param_values):
+                        point_values.append(param_values[params_idx])
+                point_str = ", ".join(f"{v:.6g}" for v in point_values)
+                print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables "
+                      f"from variation v{var_num} (point: [{point_str}], source: {source_str})")
+            else:
+                print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables "
+                      f"from variation v{var_num} (source: {source_str})")
         if not equal_variations:
             param_offset += len(var_numbers)
 

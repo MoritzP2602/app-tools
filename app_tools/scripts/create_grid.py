@@ -7,6 +7,7 @@ import json
 import re
 import argparse
 import itertools
+import string
 from dataclasses import dataclass, field
 from collections import OrderedDict, defaultdict, deque
 
@@ -369,7 +370,7 @@ class ParameterGrid:
                         continue
 
                     if len(cols) != len(header):
-                        print(f"Warning: Skipping malformed line in '{table_path}': {raw.rstrip()}")
+                        print(f"Warning: Skipping malformed line in '{table_path}': {raw.rstrip()}.")
                         continue
 
                     row = dict(zip(header, cols))
@@ -596,9 +597,7 @@ class ParameterGrid:
                         idx = idx_map[(float(lo), float(hi))]
                         by_sector[sid][pname] = values[idx]
                 else:
-                    fail(
-                        f"Nominal list for sectorized parameter '{pname}' has {len(values)} values, expected 1 or {n_intervals}"
-                    )
+                    fail(f"Nominal list for sectorized parameter '{pname}' has {len(values)} values, expected 1 or {n_intervals}")
                 continue
 
             if not is_number(entry):
@@ -646,6 +645,71 @@ class ParameterGrid:
                 f.write(f"{pname} [{values_str}]\n")
         return
 
+    @staticmethod
+    def _sanitize_plot_name(name):
+        return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name))
+
+    def _collect_sector_internal_boundaries(self):
+        intervals_by_param = OrderedDict()
+        for point in self.points:
+            for pname, bounds in point.sector_bounds.items():
+                if pname not in intervals_by_param:
+                    intervals_by_param[pname] = set()
+                lo, hi = bounds
+                intervals_by_param[pname].add((float(lo), float(hi)))
+
+        internal_by_param = {}
+        for pname, intervals in intervals_by_param.items():
+            edges = sorted(set([v for iv in intervals for v in iv]))
+            if len(edges) > 2:
+                internal_by_param[pname] = edges[1:-1]
+            else:
+                internal_by_param[pname] = []
+        return internal_by_param
+
+    def create_pairwise_plots(self, outdir, fmt="pdf", dpi=150):
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as exc:
+            fail(f"matplotlib is required for plot mode: {exc}")
+
+        names = self.parameter_names()
+        if len(names) < 2:
+            fail("plot mode requires at least 2 parameters")
+
+        os.makedirs(outdir, exist_ok=True)
+        internal_bounds = self._collect_sector_internal_boundaries()
+
+        pairs = list(itertools.combinations(names, 2))
+        created = []
+
+        for xname, yname in pairs:
+            xv = [float(p.values[xname]) for p in self.points]
+            yv = [float(p.values[yname]) for p in self.points]
+
+            fig, ax = plt.subplots(figsize=(6.0, 6.0))
+            ax.scatter(xv, yv, s=14, alpha=0.85)
+
+            for xline in internal_bounds.get(xname, []):
+                ax.axvline(xline, color="grey", linestyle="--", linewidth=0.9, alpha=0.7)
+            for yline in internal_bounds.get(yname, []):
+                ax.axhline(yline, color="grey", linestyle="--", linewidth=0.9, alpha=0.7)
+
+            ax.set_xlabel(xname)
+            ax.set_ylabel(yname)
+            ax.set_title(f"{xname} vs {yname}")
+            ax.grid(True, alpha=0.2)
+            fig.tight_layout()
+
+            fname = f"{self._sanitize_plot_name(xname)}__{self._sanitize_plot_name(yname)}.{fmt}"
+            fpath = os.path.join(outdir, fname)
+            fig.savefig(fpath, dpi=dpi)
+            plt.close(fig)
+            created.append(fpath)
+
+        print(f"Created {len(created)} pairwise projection plots in '{outdir}'")
+        return created
+
 
 def load_template(path):
     if not os.path.exists(path):
@@ -680,11 +744,20 @@ def extract_params_from_minimum_file(path):
     return params
 
 
+def extract_template_fields(template_content):
+    fields = []
+    for _, field_name, _, _ in string.Formatter().parse(template_content):
+        if field_name is not None and field_name != "":
+            fields.append(field_name)
+    return sorted(set(fields))
+
+
 def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaults_path, outdir, precision):
     if not os.path.isdir(scan_dir):
         fail(f"Scan directory '{scan_dir}' not found")
 
     os.makedirs(outdir, exist_ok=True)
+    template_fields = extract_template_fields(template_content)
 
     if defaults_path is not None:
         if not os.path.exists(defaults_path):
@@ -715,24 +788,34 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
 
         params = extract_params_from_minimum_file(source_file)
         if not params:
-            print(f"Warning: no parameters in {source_file}, skipping")
+            print(f"Warning: no parameters in {source_file}, skipping.")
             continue
 
         if precision is not None:
             params = {k: round(v, precision) for k, v in params.items()}
 
+        if len(params) != len(template_fields):
+            print(f"Warning: skipping {subdir}: template expects {len(template_fields)} fields, "
+                  f"but input provides {len(params)} arguments.")
+            continue
+
+        missing_fields = [name for name in template_fields if name not in params]
+        if missing_fields:
+            print(f"Warning: skipping {subdir}: missing template fields: {', '.join(missing_fields)}.")
+            continue
+
         target = os.path.join(outdir, subdir)
         if os.path.exists(target):
-            print(f"Skipping {target} (already exists)")
+            print(f"Skipping {target} (already exists).")
             continue
-        os.makedirs(target, exist_ok=True)
 
         try:
             rendered = template_content.format(**params)
         except KeyError as exc:
-            print(f"Warning: missing parameter {exc} for {source_file}, skipping")
+            print(f"Warning: missing parameter {exc} for {source_file}, skipping.")
             continue
 
+        os.makedirs(target, exist_ok=True)
         with open(os.path.join(target, template_name), "w") as f:
             f.write(rendered)
     return
@@ -764,12 +847,13 @@ SUBCOMMANDS:
   import    Load points from table or existing directory
   tune      Extract parameter sets from tune scan directory
   minmax    Generate min/max points for each parameter
+  plot      Plot pairwise 2D parameter projections from a table
 
 Examples:
   Sample 100 random points from parameter ranges:
     create_grid.py sample parameters.json TEMPLATE.yaml -n 100
-  Sample points with seed and write lookup table:
-    create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --seed 42 --table
+  Sample points with seed, write lookup table and create plots:
+    create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --seed 42 --table --plots
   Generate reweighting runcards using nominal values:
     create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --nominal nominal.json
   Uniform grid sampling:
@@ -782,6 +866,8 @@ Examples:
     create_grid.py tune tunes/ TEMPLATE.yaml --tune-prefix tune_
   Generate runcards with min/max extremes:
     create_grid.py minmax parameters.json TEMPLATE.yaml --defaults defaults.json
+  Plot all parameter-pair projections from existing table:
+    create_grid.py plot newscan.dat
 
 Advanced Features:
   Dynamic parameter bounds (sample/minmax):
@@ -809,7 +895,8 @@ Advanced Features:
     p_sample.add_argument("--sampling", choices=["random", "uniform"], default="random")
     p_sample.add_argument("--seed", type=int, help="Random seed (random sampling only)")
     p_sample.add_argument("-o", "--outdir", default="newscan")
-    p_sample.add_argument("-t", "--table", action="store_true", help="Write lookup table")
+    p_sample.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>/<outdir>.dat")
+    p_sample.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>/<outdir>.plots")
     p_sample.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
 
     p_import = sub.add_parser("import", help="Import points from table or existing directory")
@@ -817,7 +904,8 @@ Advanced Features:
     p_import.add_argument("template", help="Template file")
     p_import.add_argument("-n", "--num-points", type=int, help="Optional point limit when input is directory")
     p_import.add_argument("-o", "--outdir", default="newscan")
-    p_import.add_argument("-t", "--table", action="store_true", help="Write lookup table")
+    p_import.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>/<outdir>.dat")
+    p_import.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>/<outdir>.plots")
     p_import.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
 
     p_tune = sub.add_parser("tune", help="Build templates from tune scan directory")
@@ -833,6 +921,12 @@ Advanced Features:
     p_minmax.add_argument("template", help="Template file")
     p_minmax.add_argument("-d", "--defaults", required=True, help="Defaults JSON used as baseline")
     p_minmax.add_argument("-o", "--outdir", default="newscan")
+
+    p_plot = sub.add_parser("plot", help="Plot pairwise 2D parameter projections from table")
+    p_plot.add_argument("table", help="Input table (.dat), e.g. newscan.dat")
+    p_plot.add_argument("-o", "--outdir", default=None, help="Output directory for plots (default: <table path>/<table basename>.plots)")
+    p_plot.add_argument("--format", choices=["pdf", "png", "svg"], default="pdf", help="Plot output format")
+    p_plot.add_argument("--dpi", type=int, default=150, help="Plot DPI")
 
     return parser
 
@@ -880,7 +974,6 @@ def print_sampling_summary(args, source_kind, grid, model=None):
         print("  Dynamic parameters: " + ", ".join(dynamic_params))
     if sectorized_params:
         print("  Sectorized parameters: " + ", ".join(sectorized_params))
-    print()
     return
 
 
@@ -892,11 +985,10 @@ def print_non_sampling_summary(command, source_msg, defaults=None, tune_prefix=N
         print(f"  Default source: {defaults}")
     if tune_prefix:
         print(f"  Tune prefix: {tune_prefix}")
-    print()
     return
 
 
-def print_outputs(outdir, wrote_table=False, wrote_reweighting=False):
+def print_outputs(outdir, wrote_table=False, wrote_reweighting=False, plots_dir=None):
     outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
     outputs = [outdir_clean]
     if wrote_table:
@@ -905,6 +997,8 @@ def print_outputs(outdir, wrote_table=False, wrote_reweighting=False):
         rw_dir = outdir_clean + ".rew"
         outputs.append(rw_dir)
         outputs.append(os.path.join(rw_dir, "variations.dat"))
+    if plots_dir:
+        outputs.append(plots_dir)
 
     print("Created outputs:")
     for p in outputs:
@@ -927,14 +1021,18 @@ def main():
 
         wrote_table       = False
         wrote_reweighting = False
+        plots_dir         = None
         if args.table:
             grid.write_lookup_table(args.outdir)
             wrote_table = True
+        if args.plots:
+            plots_dir = os.path.join(args.outdir, f"{os.path.basename(args.outdir)}.plots")
+            grid.create_pairwise_plots(plots_dir)
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, args.outdir.rstrip("/") + ".rew")
             wrote_reweighting = True
         print_sampling_summary(args, source_kind="parameter-file", grid=grid, model=model)
-        print_outputs(args.outdir, wrote_table, wrote_reweighting)
+        print_outputs(args.outdir, wrote_table, wrote_reweighting, plots_dir=plots_dir)
         return
 
     if args.command == "import":
@@ -953,14 +1051,18 @@ def main():
 
         wrote_table       = False
         wrote_reweighting = False
+        plots_dir         = None
         if args.table:
             grid.write_lookup_table(args.outdir)
             wrote_table = True
+        if args.plots:
+            plots_dir = os.path.join(args.outdir, f"{os.path.basename(args.outdir)}.plots")
+            grid.create_pairwise_plots(plots_dir)
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, args.outdir.rstrip("/") + ".rew")
             wrote_reweighting = True
         print_sampling_summary(args, source_kind=source_kind, grid=grid, model=None)
-        print_outputs(args.outdir, wrote_table, wrote_reweighting)
+        print_outputs(args.outdir, wrote_table, wrote_reweighting, plots_dir=plots_dir)
         return
 
     if args.command == "tune":
@@ -992,6 +1094,19 @@ def main():
             source_msg=f"parameter-file: {args.parameters}",
             defaults=args.defaults,)
         print_outputs(args.outdir, wrote_table=False, wrote_reweighting=False)
+        return
+
+    if args.command == "plot":
+        if not os.path.isfile(args.table) or not args.table.endswith(".dat"):
+            fail("plot mode requires a .dat table file as input")
+        outdir = args.outdir if args.outdir else os.path.splitext(args.table)[0] + ".plots"
+        confirm_overwrite(outdir)
+        grid = ParameterGrid.from_table(args.table)
+        grid.create_pairwise_plots(outdir, fmt=args.format, dpi=args.dpi)
+        print_non_sampling_summary(command="plot", source_msg=f"table-file: {args.table}")
+        outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
+        print("Created outputs:")
+        print(f"  - {outdir_clean}")
         return
 
 
