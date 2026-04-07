@@ -7,6 +7,7 @@ import json
 import re
 import argparse
 import itertools
+import string
 from dataclasses import dataclass, field
 from collections import OrderedDict, defaultdict, deque
 
@@ -369,7 +370,7 @@ class ParameterGrid:
                         continue
 
                     if len(cols) != len(header):
-                        print(f"Warning: Skipping malformed line in '{table_path}': {raw.rstrip()}")
+                        print(f"Warning: Skipping malformed line in '{table_path}': {raw.rstrip()}.")
                         continue
 
                     row = dict(zip(header, cols))
@@ -596,9 +597,7 @@ class ParameterGrid:
                         idx = idx_map[(float(lo), float(hi))]
                         by_sector[sid][pname] = values[idx]
                 else:
-                    fail(
-                        f"Nominal list for sectorized parameter '{pname}' has {len(values)} values, expected 1 or {n_intervals}"
-                    )
+                    fail(f"Nominal list for sectorized parameter '{pname}' has {len(values)} values, expected 1 or {n_intervals}")
                 continue
 
             if not is_number(entry):
@@ -680,11 +679,20 @@ def extract_params_from_minimum_file(path):
     return params
 
 
+def extract_template_fields(template_content):
+    fields = []
+    for _, field_name, _, _ in string.Formatter().parse(template_content):
+        if field_name is not None and field_name != "":
+            fields.append(field_name)
+    return sorted(set(fields))
+
+
 def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaults_path, outdir, precision):
     if not os.path.isdir(scan_dir):
         fail(f"Scan directory '{scan_dir}' not found")
 
     os.makedirs(outdir, exist_ok=True)
+    template_fields = extract_template_fields(template_content)
 
     if defaults_path is not None:
         if not os.path.exists(defaults_path):
@@ -715,24 +723,34 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
 
         params = extract_params_from_minimum_file(source_file)
         if not params:
-            print(f"Warning: no parameters in {source_file}, skipping")
+            print(f"Warning: no parameters in {source_file}, skipping.")
             continue
 
         if precision is not None:
             params = {k: round(v, precision) for k, v in params.items()}
 
+        if len(params) != len(template_fields):
+            print(f"Warning: skipping {subdir}: template expects {len(template_fields)} fields, "
+                  f"but input provides {len(params)} arguments.")
+            continue
+
+        missing_fields = [name for name in template_fields if name not in params]
+        if missing_fields:
+            print(f"Warning: skipping {subdir}: missing template fields: {', '.join(missing_fields)}.")
+            continue
+
         target = os.path.join(outdir, subdir)
         if os.path.exists(target):
-            print(f"Skipping {target} (already exists)")
+            print(f"Skipping {target} (already exists).")
             continue
-        os.makedirs(target, exist_ok=True)
 
         try:
             rendered = template_content.format(**params)
         except KeyError as exc:
-            print(f"Warning: missing parameter {exc} for {source_file}, skipping")
+            print(f"Warning: missing parameter {exc} for {source_file}, skipping.")
             continue
 
+        os.makedirs(target, exist_ok=True)
         with open(os.path.join(target, template_name), "w") as f:
             f.write(rendered)
     return
@@ -880,7 +898,6 @@ def print_sampling_summary(args, source_kind, grid, model=None):
         print("  Dynamic parameters: " + ", ".join(dynamic_params))
     if sectorized_params:
         print("  Sectorized parameters: " + ", ".join(sectorized_params))
-    print()
     return
 
 
@@ -892,7 +909,6 @@ def print_non_sampling_summary(command, source_msg, defaults=None, tune_prefix=N
         print(f"  Default source: {defaults}")
     if tune_prefix:
         print(f"  Tune prefix: {tune_prefix}")
-    print()
     return
 
 

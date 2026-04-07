@@ -497,7 +497,7 @@ def process_single_file(args, loader, yoda_file,
 	average_chi2 = np.mean(valid_obs) if valid_obs else np.nan
 
 	analyses_chi2s = {}
-	if "analyses" in set(args.cli_output): 
+	if "analyses" in set(args.table_output): 
 		analyses_chi2s = analyses_chi2(obs_chi2s, debug=args.debug)
 
 	summary = {
@@ -558,9 +558,10 @@ def collect_yoda_files(yoda_inputs, tags=None, labels=None, include_subdirs=Fals
 	for input_index, raw_input in enumerate(yoda_inputs):
 		path = Path(raw_input)
 		if path.is_dir():
-			pattern = "**/*" if include_subdirs else "*"
-			candidates = sorted([p for p in path.glob(f"{pattern}.yoda") if p.is_file()])
-			candidates.extend(sorted([p for p in path.glob(f"{pattern}.yoda.gz") if p.is_file()]))
+			patterns = ["*.yoda", "*.yoda.gz"] if not include_subdirs else ["*.yoda", "*/*.yoda", "*.yoda.gz", "*/*.yoda.gz"]
+			candidates = []
+			for pat in patterns:
+				candidates.extend(sorted([p for p in path.glob(pat) if p.is_file()]))
 		else:
 			candidates = [path]
 
@@ -588,7 +589,6 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 	"""Print chi2 summary table to console."""
 
 	table = []
-	chi2_dict = {"red": {}, "avg": {}}
 
 	for s in summaries:
 		table.append(
@@ -600,8 +600,6 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 				f"{s['average_chi2']}" if np.isfinite(s["average_chi2"]) else "nan",
 			]
 		)
-		chi2_dict["red"][s["label"]] = s["reduced_chi2"] if np.isfinite(s["reduced_chi2"]) else np.inf
-		chi2_dict["avg"][s["label"]] = s["average_chi2"] if np.isfinite(s["average_chi2"]) else np.inf
 		if show_analyses:
 			for a in s["analysis_chi2"].keys():
 				table.append(
@@ -619,15 +617,17 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 				headers=["Label" if not show_sources else "Source", "Global chi2", "ndf", "Reduced chi2", "Average chi2"], 
 				tablefmt="simple_outline", floatfmt=".3f", numalign="decimal"))
 	print()
-	min_red_key = min(chi2_dict["red"], key=chi2_dict["red"].get)
-	if np.isfinite(chi2_dict["red"][min_red_key]):
-		print(f"Min. reduced chi2: {chi2_dict['red'][min_red_key]:.2f} "
-				f"(label: {min_red_key}, source: {s['source']})")
-	min_avg_key = min(chi2_dict["avg"], key=chi2_dict["avg"].get)
-	if np.isfinite(chi2_dict["avg"][min_avg_key]):
-		print(f"Min. average chi2: {chi2_dict['avg'][min_avg_key]:.2f} "
-				f"(label: {min_avg_key}, source: {s['source']})")
-	if np.isfinite(chi2_dict["red"][min_red_key]) or np.isfinite(chi2_dict["avg"][min_avg_key]):
+	finite_red = [s for s in summaries if np.isfinite(s["reduced_chi2"])]
+	finite_avg = [s for s in summaries if np.isfinite(s["average_chi2"])]
+	if finite_red:
+		best_red = min(finite_red, key=lambda x: x["reduced_chi2"])
+		print(f"Min. reduced chi2: {best_red['reduced_chi2']:.2f} "
+				f"(label: {best_red['label']}, source: {best_red['source']})")
+	if finite_avg:
+		best_avg = min(finite_avg, key=lambda x: x["average_chi2"])
+		print(f"Min. average chi2: {best_avg['average_chi2']:.2f} "
+				f"(label: {best_avg['label']}, source: {best_avg['source']})")
+	if finite_red or finite_avg:
 		print()
 	return
 
