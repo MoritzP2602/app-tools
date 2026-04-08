@@ -681,8 +681,6 @@ class ParameterGrid:
         internal_bounds = self._collect_sector_internal_boundaries()
 
         pairs = list(itertools.combinations(names, 2))
-        created = []
-
         for xname, yname in pairs:
             xv = [float(p.values[xname]) for p in self.points]
             yv = [float(p.values[yname]) for p in self.points]
@@ -705,10 +703,7 @@ class ParameterGrid:
             fpath = os.path.join(outdir, fname)
             fig.savefig(fpath, dpi=dpi)
             plt.close(fig)
-            created.append(fpath)
-
-        print(f"Created {len(created)} pairwise projection plots in '{outdir}'")
-        return created
+        return
 
 
 def load_template(path):
