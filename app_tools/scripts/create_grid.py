@@ -669,7 +669,18 @@ class ParameterGrid:
 
     def create_pairwise_plots(self, outdir, fmt="pdf", dpi=150):
         try:
+            import matplotlib as mpl
             import matplotlib.pyplot as plt
+
+            mpl.use('Agg')
+            mpl.rcParams['font.family'] = 'serif'
+            mpl.rcParams['font.serif'] = ['TeX Gyre Pagella']
+            mpl.rcParams['mathtext.fontset'] = 'custom'
+            mpl.rcParams['mathtext.rm'] = 'TeX Gyre Pagella'
+            mpl.rcParams['mathtext.bf'] = 'TeX Gyre Pagella:bold'
+            mpl.rcParams['mathtext.it'] = 'TeX Gyre Pagella:italic'
+            mpl.rcParams['mathtext.default'] = 'it'
+
         except ImportError as exc:
             fail(f"matplotlib is required for plot mode: {exc}")
 
@@ -693,9 +704,10 @@ class ParameterGrid:
             for yline in internal_bounds.get(yname, []):
                 ax.axhline(yline, color="grey", linestyle="--", linewidth=0.9, alpha=0.7)
 
-            ax.set_xlabel(xname)
-            ax.set_ylabel(yname)
-            ax.set_title(f"{xname} vs {yname}")
+            ax.set_xlabel(xname, fontsize=14)
+            ax.set_ylabel(yname, fontsize=14)
+            ax.set_title(f"{xname} vs {yname}", fontsize=18)
+            ax.tick_params(axis='both', which='major', labelsize=12, length=5)
             ax.grid(True, alpha=0.2)
             fig.tight_layout()
 
