@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import datetime
+import itertools
 from pathlib import Path
 
 mpl.use('Agg')
@@ -506,6 +507,198 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
     return
 
 
+def grid(args):
+    """Plot chi2 values on a grid."""
+
+    forbidden_options = []
+    for option in os.sys.argv[1:]:
+        if option == "--grid" or option.startswith("--grid="):
+            continue
+        if option.startswith("-"):
+            forbidden_options.append(option)
+    if forbidden_options:
+        print("Error: --grid mode does not allow any additional options.")
+        print(f"       Forbidden option(s): {' '.join(forbidden_options)}")
+        return 1
+    if len(args.chi2_json) != 1:
+        print("Error: --grid mode requires exactly one chi2.json file.")
+        return 1
+    grid_path = Path(args.grid)
+    json_path = Path(args.chi2_json[0])
+    if not grid_path.exists():
+        print(f"Error: grid file does not exist: {grid_path}.")
+        return 1
+    if not json_path.exists():
+        print(f"Error: input file does not exist: {json_path}.")
+        return 1
+    try:
+        plot_chi2_grid(str(grid_path), str(json_path), fmt="pdf", dpi=150)
+    except ValueError as e:
+        print(f"Error: {e}.")
+        return 1
+
+    def read_grid_table(path):
+        points = []
+        header = None
+        with open(path, "r") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    maybe_header = line[1:].strip().split()
+                    if header is None and maybe_header and maybe_header[0].lower() == "index":
+                        header = maybe_header
+                    continue
+                cols = line.split()
+                if header is None:
+                    header = cols
+                    continue
+                if len(cols) != len(header):
+                    raise ValueError(f"Malformed grid row in '{path}': {raw.rstrip()}")
+                row = dict(zip(header, cols))
+                point_index = ""
+                values = {}
+                for k, v in row.items():
+                    lk = k.lower()
+                    if lk == "index":
+                        point_index = v
+                        continue
+                    if lk == "sector":
+                        continue
+                    values[k] = float(v)
+                points.append({"index": point_index, "values": values})
+        if not points:
+            raise ValueError(f"No valid parameter rows found in '{path}'.")
+        parameter_names = list(points[0]["values"].keys())
+        if len(parameter_names) < 2:
+            raise ValueError("Grid plot requires at least 2 parameters in the grid file.")
+        return points, parameter_names
+    
+    def chi2_from_summaries(summaries):
+            if not summaries:
+                raise ValueError("No summaries found in chi2.json")
+            chi2_by_label = {}
+            for summary in summaries:
+                label = str(summary.get("label", "")).strip()
+                if not label:
+                    raise ValueError("Found summary entry without label in chi2.json")
+                if label in chi2_by_label:
+                    raise ValueError(f"Duplicate summary label '{label}' found in chi2.json")
+                reduced = summary.get("reduced_chi2", None)
+                if reduced is None:
+                    chi2 = to_float_or_nan(summary.get("global_chi2"))
+                    ndf = to_float_or_nan(summary.get("ndf"))
+                    reduced = chi2 / ndf if np.isfinite(chi2) and np.isfinite(ndf) and ndf > 0 else np.nan
+                chi2_by_label[label] = to_float_or_nan(reduced)
+            return chi2_by_label
+
+    def plot_chi2_grid(grid_path, chi2_json_path, fmt="pdf", dpi=150):
+        points, parameter_names = read_grid_table(grid_path)
+        summaries, _, _, _, _   = read_chi2_json(chi2_json_path)
+        chi2_by_label = chi2_from_summaries(summaries)
+
+        grid_indices = [str(p["index"]) for p in points]
+        grid_index_set = set(grid_indices)
+        chi2_label_set = set(chi2_by_label.keys())
+
+        if len(grid_indices) != len(chi2_by_label):
+            raise ValueError(f"Grid/chi2 size mismatch: grid has {len(grid_indices)} points, "
+                            f"chi2.json has {len(chi2_by_label)} summaries")
+
+        missing_in_chi2 = sorted(grid_index_set - chi2_label_set)
+        extra_in_chi2   = sorted(chi2_label_set - grid_index_set)
+        if missing_in_chi2 or extra_in_chi2:
+            msg = []
+            if missing_in_chi2:
+                msg.append(f"missing in chi2.json: {missing_in_chi2}")
+            if extra_in_chi2:
+                msg.append(f"missing in grid file: {extra_in_chi2}")
+            raise ValueError("Label mismatch between grid file and chi2.json (" + "; ".join(msg) + ").")
+
+        x_lookup = {}
+        y_lookup = {}
+        for point in points:
+            for name, value in point["values"].items():
+                x_lookup.setdefault(name, set()).add(float(value))
+                y_lookup.setdefault(name, set()).add(float(value))
+
+        outdir  = str(Path(grid_path).with_suffix("")) + ".chi2"
+        outpath = Path(outdir)
+        if outpath.exists():
+            if outpath.is_dir():
+                print("Output directory already exists.")
+                previous_cmd = read_output_command(outpath)
+                if previous_cmd:
+                    print("  Previous output directory command (from index.html):")
+                    print(f"    {previous_cmd}")
+                shutil.rmtree(outpath)
+                print(f"  Removed existing output directory: {outpath}.\n")
+            else:
+                raise ValueError(f"Output path exists and is not a directory: {outpath}")
+        os.makedirs(outdir, exist_ok=True)
+
+        pairs = list(itertools.combinations(parameter_names, 2))
+        for xname, yname in pairs:
+            xv = [float(p["values"][xname]) for p in points]
+            yv = [float(p["values"][yname]) for p in points]
+            cv = [to_float_or_nan(chi2_by_label[str(p["index"])]) for p in points]
+            finite_mask = np.isfinite(cv)
+            xv = [x for x, keep in zip(xv, finite_mask) if keep]
+            yv = [y for y, keep in zip(yv, finite_mask) if keep]
+            cv = [c for c, keep in zip(cv, finite_mask) if keep]
+            if not cv:
+                raise ValueError(f"Grid for pair ({xname}, {yname}) contains no finite chi2/ndf values.")
+            if np.any(np.asarray(cv, dtype=float) <= 0):
+                raise ValueError(f"Grid for pair ({xname}, {yname}) contains non-positive chi2/ndf values. "
+                                 f"Log10 color scale requires strictly positive values.")
+
+            z_pos = np.asarray([val for val in cv if np.isfinite(val) and val > 0], dtype=float)
+            vmin  = float(np.min(z_pos))
+            vmax  = float(np.max(z_pos))
+            if np.isclose(vmin, vmax):
+                vmin = max(vmin * 0.9, 1e-12)
+                vmax = vmax * 1.1
+            color_norm = mpl.colors.LogNorm(vmin=vmin, vmax=vmax)
+
+            try:
+                import matplotlib.tri as mtri
+            except ImportError as e:
+                raise ValueError(f"matplotlib.tri is required for grid interpolation: {e}.")
+
+            fig, ax = plt.subplots(figsize=(6.0, 6.0))
+            triangulation = mtri.Triangulation(xv, yv)
+            mesh = ax.tripcolor(triangulation, cv, cmap="viridis_r", norm=color_norm, shading="gouraud")
+            ax.scatter(xv, yv, s=16, c="white", edgecolors="black", linewidths=0.4, zorder=3)
+
+            ax.set_box_aspect(1)
+            ax.set_xlabel(xname, fontsize=14)
+            ax.set_ylabel(yname, fontsize=14)
+            ax.set_title(f"{xname} vs {yname}", fontsize=18)
+            ax.tick_params(axis='both', which='major', labelsize=12, length=5)
+            cbar = fig.colorbar(mesh, ax=ax)
+            cbar.set_label(r"$\chi^2 / \mathrm{ndf}$", fontsize=14)
+            cbar.formatter = mticker.FuncFormatter(lambda val, _: f"{val:g}")
+            cbar.update_ticks()
+            x_values = sorted(x_lookup.get(xname, []))
+            y_values = sorted(y_lookup.get(yname, []))
+            if x_values:
+                x_margin = 0.05 * (max(x_values) - min(x_values) if len(x_values) > 1 else 1.0)
+                ax.set_xlim(min(x_values) - x_margin, max(x_values) + x_margin)
+            if y_values:
+                y_margin = 0.05 * (max(y_values) - min(y_values) if len(y_values) > 1 else 1.0)
+                ax.set_ylim(min(y_values) - y_margin, max(y_values) + y_margin)
+            fig.tight_layout()
+
+            fname = f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(xname))}__{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(yname))}.{fmt}"
+            fpath = os.path.join(outdir, fname)
+            fig.savefig(fpath, dpi=dpi)
+            plt.close(fig)
+            print(f"Created plot: {fpath}")
+        print()
+        return outdir
+    return 0
+
 def main():
     print("Starting chi2 plotting...\n")
 
@@ -533,9 +726,13 @@ Output:
     parser.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
     parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
     parser.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
+    parser.add_argument("--grid", default=None, help="Grid table (.dat, e.g. newscan.dat). Plot chi2 grid.")
     # parser.add_argument("-v", "--debug", action="store_true", default=False, help="Enable debug output")
     args = parser.parse_args()
     command = " ".join(os.sys.argv)
+
+    if args.grid:
+        return grid(args)
 
     outpath = Path(args.outdir)
     if outpath.exists():
@@ -583,9 +780,7 @@ Output:
             if default_label not in labels:
                 labels.insert(0, default_label)
 
-    plot_chi2_per_analysis(data_dict, 
-                           series_ids,
-                           series_labels,
+    plot_chi2_per_analysis(data_dict, series_ids, series_labels,
                            default_label=default_label,
                            log_scale=args.log,
                            output_dir=args.outdir)
