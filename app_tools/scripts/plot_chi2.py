@@ -164,7 +164,6 @@ def filter_labels(labels, series_ids, requested_labels=None):
 def extract_numeric_sort_key(obs_id):
     """Extract numeric values from observable ID for sorting."""
 
-    import re
     nums = re.findall(r'\d+', obs_id)
     if nums:
         return tuple(int(n) for n in nums)
