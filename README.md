@@ -31,7 +31,6 @@ pip install .
 ## Requirements
 
 This package automatically installs:
-- Python 3.7+
 - numpy >= 1.19.0
 - matplotlib >= 3.3.0
 - tabulate >= 0.8.0
