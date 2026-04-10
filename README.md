@@ -53,7 +53,15 @@ This package automatically installs:
 
 ## Usage
 
-Run the tools using the command line interface. To see all available options, examples and usage intructions for each tool, use the `--help` flag.
+## Usage
+
+Run the tools via the command line interface. To see all available options, usage instructions, and examples for each tool, use the `--help` flag:
+
+```bash
+<tool-name> --help
+```
+
+A detailed tutorial explaining how the tools can be used together with Apprentice is provided in the [Wiki](https://github.com/MoritzP2602/app-tools/wiki).
 
 ## Troubleshooting
 
