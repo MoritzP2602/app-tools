@@ -814,10 +814,14 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
         with open(os.path.join(default_dir, template_name), "w") as f:
             f.write(template_content.format(**defaults))
 
-    tune_subdirs = sorted(
-        [d for d in os.listdir(scan_dir) if d.startswith(tune_prefix) and os.path.isdir(os.path.join(scan_dir, d))])
+    tune_subdirs = sorted([d for d in os.listdir(scan_dir) if os.path.isdir(os.path.join(scan_dir, d))])
+    if tune_prefix:
+        tune_subdirs = [d for d in tune_subdirs if d.startswith(tune_prefix)]
+
     if not tune_subdirs:
-        fail(f"No '{tune_prefix}*' subdirectories found in '{scan_dir}'")
+        if tune_prefix:
+            fail(f"No '{tune_prefix}*' subdirectories found in '{scan_dir}'")
+        fail(f"No subdirectories found in '{scan_dir}'")
 
     for subdir in tune_subdirs:
         full_subdir = os.path.join(scan_dir, subdir)
@@ -912,8 +916,8 @@ Examples:
     create_grid.py import grid.dat TEMPLATE.yaml --nominal nominal.json -o output
   Import from existing scan directory:
     create_grid.py import newscan/ TEMPLATE.yaml
-  Generate runcards from tune results:
-    create_grid.py tune tunes/ TEMPLATE.yaml --tune-prefix tune_
+    Generate runcards from tune results:
+        create_grid.py tune tunes/ TEMPLATE.yaml
   Generate runcards with min/max extremes:
     create_grid.py minmax parameters.json TEMPLATE.yaml --defaults defaults.json
   Plot all parameter-pair projections from existing table:
@@ -965,7 +969,7 @@ Advanced Features:
     p_tune.add_argument("template", help="Template file")
     p_tune.add_argument("-o", "--outdir", default="newscan")
     p_tune.add_argument("-d", "--defaults", help="Optional defaults JSON")
-    p_tune.add_argument("--tune-prefix", default="tune_", help="Required prefix for tune subdirectories")
+    p_tune.add_argument("--tune-prefix", default="", help="Optional prefix for tune subdirectories (default: use all subdirectories)")
     p_tune.add_argument("--precision", type=int, default=3, help="Decimal rounding for imported tune params")
 
     p_minmax = sub.add_parser("minmax", help="Generate min/max points per parameter")
