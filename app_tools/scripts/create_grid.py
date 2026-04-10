@@ -1047,6 +1047,7 @@ def print_outputs(outdir, wrote_table=False, wrote_reweighting=False, plots_dir=
     print("Created outputs:")
     for p in outputs:
         print(f"  - {p}")
+    print()
     return
 
 

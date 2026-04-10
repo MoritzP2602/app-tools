@@ -509,33 +509,6 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
 def grid(args):
     """Plot chi2 values on a grid."""
 
-    forbidden_options = []
-    for option in os.sys.argv[1:]:
-        if option == "--grid" or option.startswith("--grid="):
-            continue
-        if option.startswith("-"):
-            forbidden_options.append(option)
-    if forbidden_options:
-        print("Error: --grid mode does not allow any additional options.")
-        print(f"       Forbidden option(s): {' '.join(forbidden_options)}")
-        return 1
-    if len(args.chi2_json) != 1:
-        print("Error: --grid mode requires exactly one chi2.json file.")
-        return 1
-    grid_path = Path(args.grid)
-    json_path = Path(args.chi2_json[0])
-    if not grid_path.exists():
-        print(f"Error: grid file does not exist: {grid_path}.")
-        return 1
-    if not json_path.exists():
-        print(f"Error: input file does not exist: {json_path}.")
-        return 1
-    try:
-        plot_chi2_grid(str(grid_path), str(json_path), fmt="pdf", dpi=150)
-    except ValueError as e:
-        print(f"Error: {e}.")
-        return 1
-
     def read_grid_table(path):
         points = []
         header = None
@@ -686,6 +659,33 @@ def grid(args):
             print(f"Created plot: {fpath}")
         print()
         return outdir
+
+    forbidden_options = []
+    for option in os.sys.argv[1:]:
+        if option == "--grid" or option.startswith("--grid="):
+            continue
+        if option.startswith("-"):
+            forbidden_options.append(option)
+    if forbidden_options:
+        print("Error: --grid mode does not allow any additional options.")
+        print(f"       Forbidden option(s): {' '.join(forbidden_options)}")
+        return 1
+    if len(args.chi2_json) != 1:
+        print("Error: --grid mode requires exactly one chi2.json file.")
+        return 1
+    grid_path = Path(args.grid)
+    json_path = Path(args.chi2_json[0])
+    if not grid_path.exists():
+        print(f"Error: grid file does not exist: {grid_path}.")
+        return 1
+    if not json_path.exists():
+        print(f"Error: input file does not exist: {json_path}.")
+        return 1
+    try:
+        plot_chi2_grid(str(grid_path), str(json_path), fmt="pdf", dpi=150)
+    except ValueError as e:
+        print(f"Error: {e}.")
+        return 1
     return 0
 
 def main():
