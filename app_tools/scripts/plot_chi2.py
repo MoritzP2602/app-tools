@@ -174,7 +174,7 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
                            log_scale=False, output_dir='chi2-plots'):
     """Create one plot per analysis showing chi2/ndf for each observable."""
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir)
     chunk_size = 100
     
     for analysis_name in sorted(data_dict.keys()):
@@ -622,20 +622,11 @@ def grid(args):
                 x_lookup.setdefault(name, set()).add(float(value))
                 y_lookup.setdefault(name, set()).add(float(value))
 
-        outdir  = str(Path(grid_path).with_suffix("")) + ".chi2"
+        outdir  = str(Path(grid_path).with_suffix("")) + ".chi2.plots"
         outpath = Path(outdir)
         if outpath.exists():
-            if outpath.is_dir():
-                print("Output directory already exists.")
-                previous_cmd = read_output_command(outpath)
-                if previous_cmd:
-                    print("  Previous output directory command (from index.html):")
-                    print(f"    {previous_cmd}")
-                shutil.rmtree(outpath)
-                print(f"  Removed existing output directory: {outpath}.\n")
-            else:
-                raise ValueError(f"Output path exists and is not a directory: {outpath}")
-        os.makedirs(outdir, exist_ok=True)
+            raise ValueError(f"Output path already exists: {outpath}.")
+        os.makedirs(outdir)
 
         pairs = list(itertools.combinations(parameter_names, 2))
         for xname, yname in pairs:
@@ -673,7 +664,6 @@ def grid(args):
             ax.set_box_aspect(1)
             ax.set_xlabel(xname, fontsize=14)
             ax.set_ylabel(yname, fontsize=14)
-            ax.set_title(f"{xname} vs {yname}", fontsize=18)
             ax.tick_params(axis='both', which='major', labelsize=12, length=5)
             cbar = fig.colorbar(mesh, ax=ax)
             cbar.set_label(r"$\chi^2 / \mathrm{ndf}$", fontsize=14)
