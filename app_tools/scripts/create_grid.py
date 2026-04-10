@@ -813,57 +813,46 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
         os.makedirs(default_dir)
         with open(os.path.join(default_dir, template_name), "w") as f:
             f.write(template_content.format(**defaults))
-
     tune_subdirs = sorted([d for d in os.listdir(scan_dir) if os.path.isdir(os.path.join(scan_dir, d))])
     if tune_prefix:
         tune_subdirs = [d for d in tune_subdirs if d.startswith(tune_prefix)]
-
     if not tune_subdirs:
         if tune_prefix:
             fail(f"No '{tune_prefix}*' subdirectories found in '{scan_dir}'")
         fail(f"No subdirectories found in '{scan_dir}'")
-
     for subdir in tune_subdirs:
         full_subdir = os.path.join(scan_dir, subdir)
         min_files = glob.glob(os.path.join(full_subdir, "minimum_*.txt"))
         tune_dat = os.path.join(full_subdir, "tune.dat")
-
         if min_files:
             source_file = min_files[0]
         elif os.path.exists(tune_dat):
             source_file = tune_dat
         else:
             continue
-
         params = extract_params_from_minimum_file(source_file)
         if not params:
             print(f"Warning: no parameters in {source_file}, skipping.")
             continue
-
         if precision is not None:
             params = {k: round(v, precision) for k, v in params.items()}
-
         if len(params) != len(template_fields):
             print(f"Warning: skipping {subdir}: template expects {len(template_fields)} fields, "
                   f"but input provides {len(params)} arguments.")
             continue
-
         missing_fields = [name for name in template_fields if name not in params]
         if missing_fields:
             print(f"Warning: skipping {subdir}: missing template fields: {', '.join(missing_fields)}.")
             continue
-
         target = os.path.join(outdir, subdir)
         if os.path.exists(target):
             print(f"Skipping {target} (already exists).")
             continue
-
         try:
             rendered = template_content.format(**params)
         except KeyError as exc:
             print(f"Warning: missing parameter {exc} for {source_file}, skipping.")
             continue
-
         os.makedirs(target)
         with open(os.path.join(target, template_name), "w") as f:
             f.write(rendered)
