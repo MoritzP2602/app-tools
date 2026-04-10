@@ -81,6 +81,13 @@ def write_yoda_file(output_path, analysis_objects):
     return
 
 
+def find_yoda_files(directory):
+    yoda_files = []
+    for pattern in ("*.yoda", "*.yoda.gz"):
+        yoda_files.extend(directory.glob(pattern))
+    return sorted(yoda_files, key=lambda path: path.name)
+
+
 def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, equal_variations=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
@@ -110,7 +117,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
         yoda_files_to_process = [(None, input_path)]
         print(f"Processing single YODA file: {input_path.name}")
     elif input_path.is_dir():
-        direct_yoda_files = list(input_path.glob("*.yoda"))
+        direct_yoda_files = find_yoda_files(input_path)
         subdirs = sorted([d for d in input_path.iterdir() if d.is_dir()])
         
         if direct_yoda_files and not subdirs:
@@ -121,7 +128,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
         elif subdirs:
             yoda_files_to_process = []
             for subdir in sorted(subdirs, key=lambda d: d.name):
-                yoda_files = list(subdir.glob("*.yoda"))
+                yoda_files = find_yoda_files(subdir)
                 if yoda_files:
                     yoda_files_to_process.append((subdir, yoda_files[0]))
             
@@ -271,7 +278,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
         if not equal_variations:
             param_offset += len(var_numbers)
 
-    print(f"\nDone! Created {total_output_dirs} subdirectories in {output_dir}")
+    print(f"\nDone! Created {total_output_dirs} subdirectories in {output_dir}\n")
     return
 
 
