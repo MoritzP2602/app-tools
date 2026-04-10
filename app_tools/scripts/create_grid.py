@@ -17,6 +17,25 @@ def fail(msg):
     print(f"Error: {msg}.")
     sys.exit(1)
 
+
+def sidecar_path(outdir, suffix):
+    clean = outdir.rstrip(os.sep)
+    parent = os.path.dirname(clean)
+    base = os.path.basename(clean)
+    name = f"{base}{suffix}"
+    return os.path.join(parent, name) if parent else name
+
+def plot_sidecar_path(table_path, suffix):
+    table_name = os.path.basename(str(table_path).rstrip(os.sep))
+    parent = os.path.dirname(os.path.abspath(table_path))
+    if table_name.endswith(".grid.dat"):
+        stem = table_name[:-len(".grid.dat")]
+    elif table_name.endswith(".dat"):
+        stem = table_name[:-len(".dat")]
+    else:
+        stem = table_name
+    return os.path.join(parent, f"{stem}{suffix}")
+
 def is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
@@ -480,8 +499,8 @@ class ParameterGrid:
             return
 
         self.assign_sequential_indices()
-        outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
-        table_file   = os.path.join(outdir_clean, "grid.dat")
+        table_file   = sidecar_path(outdir, ".grid.dat")
+        os.makedirs(os.path.dirname(table_file) or ".", exist_ok=True)
         param_names  = sorted(self.parameter_names())
 
         grouped = OrderedDict()
@@ -526,7 +545,7 @@ class ParameterGrid:
                     values = [f"{float(point.values[name]):.{int(precision)}e}" for name in param_names]
                     f.write(f"{point.index}\t{sid}\t" + "\t".join(values) + "\n")
                 f.write("\n")
-        return
+            return table_file
 
     @staticmethod
     def _load_nominal_values(nominal_path):
@@ -628,7 +647,7 @@ class ParameterGrid:
         return by_sector
 
     def write_reweighting(self, nominal_path, template_name, template_content, outdir, precision=6):
-        os.makedirs(outdir)
+        os.makedirs(outdir, exist_ok=True)
         nominal_values = self._load_nominal_values(nominal_path)
         nominal_by_sector = self._prepare_nominal_values_by_sector(nominal_values)
 
@@ -640,7 +659,7 @@ class ParameterGrid:
         pad_width = 1 + int(np.ceil(np.log10(max(1, len(self.points)))))
         for sid, points in grouped.items():
             sector_dir = os.path.join(outdir, str(sid).zfill(pad_width))
-            os.makedirs(sector_dir)
+            os.makedirs(sector_dir, exist_ok=True)
 
             param_dict = OrderedDict()
             for name in self.parameter_names():
@@ -658,7 +677,8 @@ class ParameterGrid:
             for k, vals in param_dict.items():
                 combined[k].extend(vals[1:])
 
-        variations_file = os.path.join(outdir, "variations.dat")
+        variations_file = outdir.rstrip("/") + ".var.dat"
+        os.makedirs(os.path.dirname(variations_file) or ".", exist_ok=True)
         with open(variations_file, "w") as f:
             for pname, values in combined.items():
                 values_str = ", ".join([f"{float(v):.{int(precision)}e}" for v in values])
@@ -708,7 +728,7 @@ class ParameterGrid:
         if len(names) < 2:
             fail("plot mode requires at least 2 parameters")
 
-        os.makedirs(outdir)
+        os.makedirs(outdir, exist_ok=True)
         internal_bounds = self._collect_sector_internal_boundaries()
 
         pairs = list(itertools.combinations(names, 2))
@@ -865,7 +885,7 @@ def confirm_overwrite(path):
         if response.lower() != "y":
             print("Aborted.")
             sys.exit(1)
-        if path.is_dir():
+        if os.path.isdir(path):
             shutil.rmtree(path)
         else:
             raise ValueError(f"Output path exists and is not a directory. "
@@ -873,9 +893,8 @@ def confirm_overwrite(path):
     return
 
 
-def write_minmax_info(outdir, info_lines, info_filename="params.dat"):
-    os.makedirs(outdir)
-    info_path = os.path.join(outdir, info_filename)
+def write_minmax_info(info_path, info_lines):
+    os.makedirs(os.path.dirname(info_path) or ".", exist_ok=True)
     with open(info_path, "w") as f:
         f.write("# INDEX\tPARAMETER: min/max\n")
         for line in info_lines:
@@ -902,7 +921,7 @@ Examples:
   Uniform grid sampling:
     create_grid.py sample parameters.json TEMPLATE.yaml -n 100 --sampling uniform
   Import from existing table:
-    create_grid.py import grid.dat TEMPLATE.yaml --nominal nominal.json -o output
+        create_grid.py import newscan.grid.dat TEMPLATE.yaml --nominal nominal.json -o output
   Import from existing scan directory:
     create_grid.py import newscan/ TEMPLATE.yaml
     Generate runcards from tune results:
@@ -910,7 +929,7 @@ Examples:
   Generate runcards with min/max extremes:
     create_grid.py minmax parameters.json TEMPLATE.yaml --defaults defaults.json
   Plot all parameter-pair projections from existing table:
-    create_grid.py plot grid.dat
+        create_grid.py plot newscan.grid.dat
 
 Advanced Features:
   Dynamic parameter bounds (sample/minmax):
@@ -921,7 +940,7 @@ Advanced Features:
     - Example: "paramC": [0.0, 1.0, 2.0] creates sectors [0.0,1.0] and [1.0,2.0],
       distributing points uniformly across sectors.
   Reweighting output:
-    - Use --nominal to generate reweighting runcards and variations.dat file.
+        - Use --nominal to generate reweighting runcards and <outdir>.rew.var.dat file.
     - Supports per-sector nominal values via lists in the nominal parameter file.
   Lookup table:
     - Use --table to create a summary table mapping points to parameters and sectors.
@@ -939,8 +958,8 @@ Advanced Features:
     p_sample.add_argument("--seed", type=int, help="Random seed (random sampling only)")
     p_sample.add_argument("--precision", type=int, default=6, help="Scientific notation precision for numeric outputs")
     p_sample.add_argument("-o", "--outdir", default="newscan")
-    p_sample.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>/grid.dat")
-    p_sample.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>/grid.plots")
+    p_sample.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>.grid.dat")
+    p_sample.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>.grid.plots")
     p_sample.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
 
     p_import = sub.add_parser("import", help="Import points from table or existing directory")
@@ -949,8 +968,8 @@ Advanced Features:
     p_import.add_argument("-n", "--num-points", type=int, help="Optional point limit when input is directory")
     p_import.add_argument("--precision", type=int, default=6, help="Scientific notation precision for numeric outputs")
     p_import.add_argument("-o", "--outdir", default="newscan")
-    p_import.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>/grid.dat")
-    p_import.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>/grid.plots")
+    p_import.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>.grid.dat")
+    p_import.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>.grid.plots")
     p_import.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
 
     p_tune = sub.add_parser("tune", help="Build templates from tune scan directory")
@@ -968,8 +987,8 @@ Advanced Features:
     p_minmax.add_argument("-o", "--outdir", default="newscan")
 
     p_plot = sub.add_parser("plot", help="Plot pairwise 2D parameter projections from table")
-    p_plot.add_argument("table", help="Input table (.dat), e.g. grid.dat")
-    p_plot.add_argument("-o", "--outdir", default=None, help="Output directory for plots (default: <table path>/grid.plots)")
+    p_plot.add_argument("table", help="Input table (.dat), e.g. newscan.grid.dat")
+    p_plot.add_argument("-o", "--outdir", default=None, help="Output directory for plots (default: <table path without .grid.dat>.grid.plots)")
     p_plot.add_argument("--format", choices=["pdf", "png", "svg"], default="pdf", help="Plot output format")
     p_plot.add_argument("--dpi", type=int, default=150, help="Plot DPI")
 
@@ -1035,18 +1054,19 @@ def print_non_sampling_summary(command, source_msg, defaults=None, tune_prefix=N
 
 def print_outputs(outdir, wrote_table=False, wrote_reweighting=False, plots_dir=None):
     outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
-    outputs = [outdir_clean]
+    outputs = [(outdir_clean, True)]
     if wrote_table:
-        outputs.append(os.path.join(outdir_clean, "grid.dat"))
+        outputs.append((sidecar_path(outdir_clean, ".grid.dat"), False))
     if wrote_reweighting:
         rw_dir = outdir_clean + ".rew"
-        outputs.append(rw_dir)
-        outputs.append(os.path.join(rw_dir, "variations.dat"))
+        outputs.append((rw_dir, True))
+        outputs.append((rw_dir + ".var.dat", False))
     if plots_dir:
-        outputs.append(plots_dir)
+        outputs.append((plots_dir, True))
     print("Created outputs:")
-    for p in outputs:
-        print(f"  - {p}")
+    for p, is_dir in outputs:
+        display = p.rstrip("/") + "/" if is_dir else p
+        print(f"  - {display}")
     print()
     return
 
@@ -1072,7 +1092,7 @@ def main():
             grid.write_lookup_table(args.outdir, precision=args.precision)
             wrote_table = True
         if args.plots:
-            plots_dir = os.path.join(args.outdir, "grid.plots")
+            plots_dir = sidecar_path(args.outdir, ".grid.plots")
             grid.create_pairwise_plots(plots_dir)
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, 
@@ -1104,7 +1124,7 @@ def main():
             grid.write_lookup_table(args.outdir, precision=args.precision)
             wrote_table = True
         if args.plots:
-            plots_dir = os.path.join(args.outdir, "grid.plots")
+            plots_dir = sidecar_path(args.outdir, ".grid.plots")
             grid.create_pairwise_plots(plots_dir)
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, 
@@ -1137,7 +1157,7 @@ def main():
         model = ParameterModel.from_file(args.parameters)
         grid, info_lines = ParameterGrid.from_minmax(model, defaults)
         grid.write_scan(args.outdir, template_name, template_content)
-        write_minmax_info(args.outdir, info_lines, info_filename="grid.dat")
+        write_minmax_info(sidecar_path(args.outdir, ".grid.dat"), info_lines)
         print_non_sampling_summary(command="minmax", source_msg=f"parameter-file: {args.parameters}", 
                                    defaults=args.defaults,)
         print_outputs(args.outdir, wrote_table=True, wrote_reweighting=False)
@@ -1146,14 +1166,14 @@ def main():
     if args.command == "plot":
         if not os.path.isfile(args.table) or not args.table.endswith(".dat"):
             fail("plot mode requires a .dat table file as input")
-        outdir = args.outdir if args.outdir else os.path.join(os.path.dirname(os.path.abspath(args.table)), "grid.plots")
+        outdir = args.outdir if args.outdir else plot_sidecar_path(args.table, ".grid.plots")
         confirm_overwrite(outdir)
         grid = ParameterGrid.from_table(args.table)
         grid.create_pairwise_plots(outdir, fmt=args.format, dpi=args.dpi)
         print_non_sampling_summary(command="plot", source_msg=f"table-file: {args.table}")
         outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
         print("Created outputs:")
-        print(f"  - {outdir_clean}")
+        print(f"  - {outdir_clean}/")
         return
 
 

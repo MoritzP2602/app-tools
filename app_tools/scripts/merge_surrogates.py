@@ -42,20 +42,17 @@ def merge_jsons_in_dir(json_dir, keep_dir=False, out_file=None):
         merged["__xmin"] = xmin
     if xmax is not None:
         merged["__xmax"] = xmax
-
     if out_file is None:
         out_file = os.path.basename(os.path.normpath(json_dir)) + ".json"
     else:
         if not out_file.endswith('.json'):
             out_file += ".json"
-
     with open(out_file, "w") as f:
         json.dump(merged, f, indent=2)
-    print(f"Merged {n} json files into {out_file}.")
-
     if os.path.exists(json_dir) and not keep_dir:
         shutil.rmtree(json_dir)
         print(f"Deleted directory {json_dir}.")
+    print(f"\nDone. Merged {n} JSON files into {out_file}.\n")
 
 
 def main():

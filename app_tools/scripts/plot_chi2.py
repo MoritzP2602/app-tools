@@ -595,7 +595,14 @@ def grid(args):
                 x_lookup.setdefault(name, set()).add(float(value))
                 y_lookup.setdefault(name, set()).add(float(value))
 
-        outdir  = str(Path(grid_path).with_suffix("")) + ".chi2.plots"
+        grid_name = Path(grid_path).name
+        if grid_name.endswith(".grid.dat"):
+            stem = grid_name[:-len(".grid.dat")]
+        elif grid_name.endswith(".dat"):
+            stem = grid_name[:-len(".dat")]
+        else:
+            stem = Path(grid_path).stem
+        outdir  = str(Path(grid_path).with_name(f"{stem}.chi2.plots"))
         outpath = Path(outdir)
         if outpath.exists():
             raise ValueError(f"Output path already exists: {outpath}.")
@@ -715,7 +722,7 @@ Output:
     parser.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
     parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
     parser.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
-    parser.add_argument("--grid", default=None, help="Grid table (.dat, e.g. newscan.dat). Plot chi2 grid.")
+    parser.add_argument("--grid", default=None, help="Grid table (.dat, e.g. newscan.grid.dat). Plot chi2 grid.")
     # parser.add_argument("-v", "--debug", action="store_true", default=False, help="Enable debug output")
     args = parser.parse_args()
     command = " ".join(os.sys.argv)

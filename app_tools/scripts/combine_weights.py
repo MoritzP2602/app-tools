@@ -86,6 +86,7 @@ Scaling example:
                     all_seen_keys.add(key)
                 value, comment = weights[key]
                 out.write(f"{key} {value:.6f} {comment}\n")
+    print(f"\nOutput written to: {args.output}.\n")
 
 
 if __name__ == "__main__":
