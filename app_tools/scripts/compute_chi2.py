@@ -580,7 +580,7 @@ def process_single_file_with_pattern(args, loader, yoda_file, label,
 		grouped_by_tag[tag][obs_name] = bins
 
 	if not grouped_by_tag:
-		print(f"\nWarning: no observable tags matching --pattern '{args.pattern}' found in {yoda_file}, skipping.")
+		print(f"\nWarning: No observable tags matching --pattern '{args.pattern}' found in {yoda_file}, skipping.")
 		return [], []
 
 	file_summaries = []
@@ -653,7 +653,7 @@ def collect_yoda_files(yoda_inputs, tags=None, labels=None, depth=0):
 		if label_mode == "tag":
 			if len(matched_tags) > 1:
 				chosen = matched_tags[0]
-				print(f"Warning: file '{file_path}' matched multiple tags {matched_tags}, using first match '{chosen}'.")
+				print(f"Warning: File '{file_path}' matched multiple tags {matched_tags}, using first match '{chosen}'.")
 				return tag_to_label[chosen]
 			return tag_to_label[matched_tags[0]]
 		if label_mode == "input":
@@ -667,12 +667,12 @@ def collect_yoda_files(yoda_inputs, tags=None, labels=None, depth=0):
 			label_mode = "tag"
 			tag_to_label = dict(zip(tags, labels))
 		elif labels is not None:
-			print(f"Warning: tags count ({len(tags)}) does not match labels count ({len(labels)}), using file stems.")
+			print(f"Warning: Tags count ({len(tags)}) does not match labels count ({len(labels)}), using file stems.")
 	else:
 		if labels is not None and len(labels) == len(yoda_inputs):
 			label_mode = "input"
 		elif labels is not None:
-			print(f"Warning: labels count ({len(labels)}) does not match input count ({len(yoda_inputs)}), using file stems.")
+			print(f"Warning: Labels count ({len(labels)}) does not match input count ({len(yoda_inputs)}), using file stems.")
 
 	files = []
 	assigned_labels = []
@@ -685,17 +685,17 @@ def collect_yoda_files(yoda_inputs, tags=None, labels=None, depth=0):
 
 		for file_path in candidates:
 			if not file_path.exists():
-				print(f"Warning: file not found, skipping: {file_path}.")
+				print(f"Warning: File not found, skipping: {file_path}.")
 				continue
 			if not file_path.is_file():
-				print(f"Warning: input is not a file, skipping: {file_path}.")
+				print(f"Warning: Input is not a file, skipping: {file_path}.")
 				continue
 
 			matched_tags = [t for t in tags if t in file_path.name] if tags else []
 			if tags and not matched_tags:
 				continue
 			if file_path in files:
-				print(f"Warning: the file '{file_path}' is included in multiple inputs, skipping duplicate occurrence.")
+				print(f"Warning: The file '{file_path}' is included in multiple inputs, skipping duplicate occurrence.")
 				continue
 			files.append(file_path)
 

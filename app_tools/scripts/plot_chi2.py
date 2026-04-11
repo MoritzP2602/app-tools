@@ -155,7 +155,7 @@ def filter_labels(labels, series_ids, requested_labels=None):
     if requested_labels:
         missing = [x for x in requested_labels if x not in labels]
         if missing:
-            print(f"Warning: requested labels not found in chi2.json and ignored: {missing}.")
+            print(f"Warning: Requested labels not found in chi2.json and ignored: {missing}.")
         labels = [x for x in requested_labels if x in labels]
     selected_series_ids = [sid for sid in series_ids if sid[0] in labels]
     return labels, selected_series_ids
@@ -202,7 +202,7 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
                 default_series_id = default_candidates[0]
                 default_bin_data  = series_to_bin_data.get(default_series_id)
             elif len(default_candidates) > 1:
-                print(f"Warning: analysis '{analysis_name}' has multiple series with default label '{default_label}'. "
+                print(f"Warning: Analysis '{analysis_name}' has multiple series with default label '{default_label}'. "
                       f"Skipping ratio subplot for this analysis.")
 
         bin_ids = sorted(all_bin_ids, key=extract_numeric_sort_key)
@@ -769,7 +769,7 @@ Output:
     default_label = None
     if args.default_label:
         if args.default_label not in available_labels:
-            print(f"Warning: default label '{args.default_label}' not found in JSON, available labels: {available_labels}. "
+            print(f"Warning: Default label '{args.default_label}' not found in JSON, available labels: {available_labels}. "
                   f"Continuing without default reference.")
         else:
             default_label = args.default_label

@@ -333,7 +333,7 @@ class ParameterGrid:
                         if len(parts) >= 2:
                             values[parts[0]] = float(parts[1])
             except (ValueError, IOError) as exc:
-                print(f"Warning: failed reading {param_file}: {exc}.")
+                print(f"Warning: Failed reading {param_file}: {exc}.")
                 continue
 
             if values:
@@ -821,7 +821,7 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
     if not os.path.isdir(scan_dir):
         fail(f"Scan directory '{scan_dir}' not found")
 
-    os.makedirs(outdir)
+    os.makedirs(outdir, exist_ok=True)
     template_fields = extract_template_fields(template_content)
 
     if defaults_path is not None:
@@ -852,17 +852,17 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
             continue
         params = extract_params_from_minimum_file(source_file)
         if not params:
-            print(f"Warning: no parameters in {source_file}, skipping.")
+            print(f"Warning: No parameters in {source_file}, skipping.")
             continue
         if precision is not None:
             params = {k: round(v, precision) for k, v in params.items()}
         if len(params) != len(template_fields):
-            print(f"Warning: skipping {subdir}: template expects {len(template_fields)} fields, "
+            print(f"Warning: Skipping {subdir}: template expects {len(template_fields)} fields, "
                   f"but input provides {len(params)} arguments.")
             continue
         missing_fields = [name for name in template_fields if name not in params]
         if missing_fields:
-            print(f"Warning: skipping {subdir}: missing template fields: {', '.join(missing_fields)}.")
+            print(f"Warning: Skipping {subdir}: missing template fields: {', '.join(missing_fields)}.")
             continue
         target = os.path.join(outdir, subdir)
         if os.path.exists(target):
@@ -871,7 +871,7 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
         try:
             rendered = template_content.format(**params)
         except KeyError as exc:
-            print(f"Warning: missing parameter {exc} for {source_file}, skipping.")
+            print(f"Warning: Missing parameter {exc} for {source_file}, skipping.")
             continue
         os.makedirs(target)
         with open(os.path.join(target, template_name), "w") as f:
@@ -1075,7 +1075,14 @@ def main():
     print("Starting grid generation...\n")
 
     parser = build_parser()
-    args   = parser.parse_args()
+    argv = sys.argv[1:]
+    if argv and (argv[0] in {"sample", "import", "tune", "minmax", "plot"} or argv[0] in ["-h", "--help"]):
+        args = parser.parse_args(argv)
+    elif argv:
+        print("Warning: Mode not specified or recognized, trying to run in sample mode.")
+        args = parser.parse_args(["sample", *argv])
+    else:
+        args = parser.parse_args(argv)
 
     if args.command == "sample":
         confirm_overwrite(args.outdir)
@@ -1135,7 +1142,6 @@ def main():
         return
 
     if args.command == "tune":
-        confirm_overwrite(args.outdir)
         template_name, template_content = load_template(args.template)
         run_tune_mode(scan_dir=args.scan_dir,
             template_name=template_name,
