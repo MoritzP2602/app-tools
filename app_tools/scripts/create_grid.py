@@ -711,15 +711,22 @@ class ParameterGrid:
         try:
             import matplotlib as mpl
             import matplotlib.pyplot as plt
+            from matplotlib import font_manager as fm
 
             mpl.use('Agg')
             mpl.rcParams['font.family'] = 'serif'
-            mpl.rcParams['font.serif'] = ['TeX Gyre Pagella']
-            mpl.rcParams['mathtext.fontset'] = 'custom'
-            mpl.rcParams['mathtext.rm'] = 'TeX Gyre Pagella'
-            mpl.rcParams['mathtext.bf'] = 'TeX Gyre Pagella:bold'
-            mpl.rcParams['mathtext.it'] = 'TeX Gyre Pagella:italic'
-            mpl.rcParams['mathtext.default'] = 'it'
+            try:
+                fm.findfont('TeX Gyre Pagella', fallback_to_default=False)
+                mpl.rcParams['font.serif'] = ['TeX Gyre Pagella']
+                mpl.rcParams['mathtext.fontset'] = 'custom'
+                mpl.rcParams['mathtext.rm'] = 'TeX Gyre Pagella'
+                mpl.rcParams['mathtext.bf'] = 'TeX Gyre Pagella:bold'
+                mpl.rcParams['mathtext.it'] = 'TeX Gyre Pagella:italic'
+                mpl.rcParams['mathtext.default'] = 'it'
+            except Exception:
+                mpl.rcParams['font.serif'] = ['DejaVu Serif']
+                mpl.rcParams['mathtext.fontset'] = 'dejavuserif'
+                mpl.rcParams['mathtext.default'] = 'it'
 
         except ImportError as exc:
             fail(f"matplotlib is required for plot mode: {exc}")
