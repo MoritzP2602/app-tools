@@ -30,7 +30,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "app-tools-compute_chi=app_tools.scripts.compute_chi2:main",
+            "app-tools-compute_chi2=app_tools.scripts.compute_chi2:main",
             "app-tools-plot_chi2=app_tools.scripts.plot_chi2:main",
             "app-tools-combine_weights=app_tools.scripts.combine_weights:main",
             "app-tools-create_grid=app_tools.scripts.create_grid:main",
