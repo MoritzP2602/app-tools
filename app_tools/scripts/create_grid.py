@@ -924,12 +924,13 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
     return
 
 
-def confirm_overwrite(path):
+def confirm_overwrite(path, skip_confirmation=False):
     if os.path.exists(path):
-        response = input(f"Warning: Output directory '{path}' already exists. Continue? [y/N] ")
-        if response.lower() != "y":
-            print("Aborted.")
-            sys.exit(1)
+        if not skip_confirmation:
+            response = input(f"Warning: Output directory '{path}' already exists. Continue? [y/N] ")
+            if response.lower() != "y":
+                print("Aborted.")
+                sys.exit(1)
         if os.path.isdir(path):
             shutil.rmtree(path)
         else:
@@ -1005,6 +1006,7 @@ Advanced Features:
     p_sample.add_argument("--seed", type=int, help="Random seed (random sampling only)")
     p_sample.add_argument("--precision", type=int, default=6, help="Scientific notation precision for numeric outputs")
     p_sample.add_argument("-o", "--outdir", default="newscan")
+    p_sample.add_argument("--overwrite", action="store_true", help="Skip overwrite confirmation if output directory exists")
     p_sample.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>.grid.dat")
     p_sample.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>.grid.plots")
     p_sample.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting output")
@@ -1015,6 +1017,7 @@ Advanced Features:
     p_import.add_argument("-n", "--num-points", type=int, help="Optional point limit when input is directory")
     p_import.add_argument("--precision", type=int, default=6, help="Scientific notation precision for numeric outputs")
     p_import.add_argument("-o", "--outdir", default="newscan")
+    p_import.add_argument("--overwrite", action="store_true", help="Skip overwrite confirmation if output directory exists")
     p_import.add_argument("-t", "--table", action="store_true", help="Write lookup table to <outdir>.grid.dat")
     p_import.add_argument("-p", "--plots", action="store_true", help="Write pairwise 2D projection plots to <outdir>.grid.plots")
     p_import.add_argument("-r", "--nominal", help="Nominal parameter file for reweighting runcard")
@@ -1033,12 +1036,14 @@ Advanced Features:
     p_minmax.add_argument("template", help="Template file")
     p_minmax.add_argument("-d", "--defaults", required=True, help="Defaults JSON used as baseline")
     p_minmax.add_argument("-o", "--outdir", default="newscan")
+    p_minmax.add_argument("--overwrite", action="store_true", help="Skip overwrite confirmation if output directory exists")
 
     p_plot = sub.add_parser("plot", help="Plot pairwise 2D parameter projections from table")
     p_plot.add_argument("table", help="Input table (.dat), e.g. newscan.grid.dat")
     p_plot.add_argument("-o", "--outdir", default=None, help="Output directory for plots (default: <table path without .grid.dat>.grid.plots)")
     p_plot.add_argument("--format", choices=["pdf", "png", "svg"], default="pdf", help="Plot output format")
     p_plot.add_argument("--dpi", type=int, default=150, help="Plot DPI")
+    p_plot.add_argument("--overwrite", action="store_true", help="Skip overwrite confirmation if output directory exists")
 
     return parser
 
@@ -1135,7 +1140,7 @@ def main():
         args = parser.parse_args(argv)
 
     if args.command == "sample":
-        confirm_overwrite(args.outdir)
+        confirm_overwrite(args.outdir, skip_confirmation=args.overwrite)
         template_name, template_content = load_template(args.template)
         model = ParameterModel.from_file(args.parameters)
         validate_template_parameter_match(template_content, model.order)
@@ -1160,7 +1165,7 @@ def main():
         return
 
     if args.command == "import":
-        confirm_overwrite(args.outdir)
+        confirm_overwrite(args.outdir, skip_confirmation=args.overwrite)
         template_name, template_content = load_template(args.template)
 
         if os.path.isdir(args.input):
@@ -1207,7 +1212,7 @@ def main():
         return
 
     if args.command == "minmax":
-        confirm_overwrite(args.outdir)
+        confirm_overwrite(args.outdir, skip_confirmation=args.overwrite)
         template_name, template_content = load_template(args.template)
         with open(args.defaults, "r") as f:
             defaults = json.load(f)
@@ -1224,7 +1229,7 @@ def main():
         if not os.path.isfile(args.table) or not args.table.endswith(".dat"):
             fail("plot mode requires a .dat table file as input")
         outdir = args.outdir if args.outdir else plot_sidecar_path(args.table, ".grid.plots")
-        confirm_overwrite(outdir)
+        confirm_overwrite(outdir, skip_confirmation=args.overwrite)
         grid = ParameterGrid.from_table(args.table)
         grid.create_pairwise_plots(outdir, fmt=args.format, dpi=args.dpi)
         print_non_sampling_summary(command="plot", source_msg=f"table-file: {args.table}")
