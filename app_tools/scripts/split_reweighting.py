@@ -311,6 +311,7 @@ corresponding variation parameter values.
     parser.add_argument('-o', '--outdir', type=str, default=None, help='Output directory for split YODA files (default: input + ".split")')
     parser.add_argument('-v', '--variations', type=str, default=None, help='Path to variations.dat file containing parameter variations')
     parser.add_argument('--equal-variations', action='store_true', help='Assume each input YODA file has the same variation list and start variations.dat indexing from 0 for each file')
+    parser.add_argument('--overwrite', action='store_true', help='Skip overwrite confirmation if output directory exists')
     args = parser.parse_args()
     
     if not os.path.exists(args.input):
@@ -328,10 +329,15 @@ corresponding variation parameter values.
         sys.exit(1)
     
     if os.path.exists(args.outdir):
-        response = input(f"Warning: Output directory '{args.outdir}' already exists. Continue? [y/N] ")
-        if response.lower() != 'y':
-            print("Aborted.")
-            sys.exit(1)
+        if not args.overwrite:
+            response = input(f"Warning: Output directory '{args.outdir}' already exists. Continue and overwrite? [y/N] ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                sys.exit(1)
+        if os.path.isdir(args.outdir):
+            shutil.rmtree(args.outdir)
+        else:
+            os.remove(args.outdir)
     
     split_yodas(args.input, args.pattern, args.outdir, args.variations, args.equal_variations)
     return 0
