@@ -924,18 +924,30 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
     return
 
 
-def confirm_overwrite(path, skip_confirmation=False):
-    if os.path.exists(path):
-        if not skip_confirmation:
-            response = input(f"Warning: Output directory '{path}' already exists. Continue? [y/N] ")
-            if response.lower() != "y":
-                print("Aborted.")
-                sys.exit(1)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
+def confirm_overwrite(outdir, skip_confirmation=False):
+    outdir_clean = outdir.rstrip(os.sep)
+    paths = [outdir_clean, outdir_clean + ".grid.dat", outdir_clean + ".grid.plots",
+             outdir_clean + ".rew", outdir_clean + ".rew.var.dat"]
+    existing_paths = []
+    for p in paths:
+        if os.path.exists(p):
+            existing_paths.append(p)
+    if not existing_paths:
+        return
+    if not skip_confirmation:
+        print("Warning: The following existing files/directories will be removed:")
+        for p in existing_paths:
+            suffix = "/" if os.path.isdir(p) else ""
+            print(f"  - {p}{suffix}")
+        response = input("Continue? [y/N] ")
+        if response.lower() != "y":
+            print("Aborted.")
+            sys.exit(1)
+    for p in existing_paths:
+        if os.path.isdir(p):
+            shutil.rmtree(p)
         else:
-            raise ValueError(f"Output path exists and is not a directory. "
-                             f"Please remove or specify a different output path.")
+            os.remove(p)
     return
 
 
