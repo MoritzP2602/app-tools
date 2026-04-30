@@ -77,7 +77,7 @@ Only observable-level weights are included.
     )
     parser.add_argument("input_file", help="Path to the weight file")
     parser.add_argument("n", type=int, help="Number of output files")
-    parser.add_argument("-o", "--output", help="Name for output directory (default: weight_files)")
+    parser.add_argument("-o", "--output", help="Name for output directory (default: files)")
     args = parser.parse_args()
 
     if not os.path.exists(args.input_file):
