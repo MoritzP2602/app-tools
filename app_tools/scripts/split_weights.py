@@ -10,7 +10,7 @@ def is_bin_specific(line):
 
 def split_weight_file(input_path, n, out_dir=None):
     if out_dir is None:
-        out_dir = "weight_files"
+        out_dir = "files"
     if os.path.exists(out_dir):
         print(f"Error: Output directory '{out_dir}' already exists, please remove it or choose a different name!")
         sys.exit(1)
@@ -64,12 +64,12 @@ This script splits a weight file into N roughly equal files for parallel process
 Each output file contains a subset of the observables, with balanced distribution.
 
 Output structure:
-  weight_files/  (directory containing split files)
+  files/  (directory containing split files)
     00
     01
     02
     ...
-  weight_files.txt  (file listing paths to all weight files, one per line)
+  files.txt  (file listing paths to all weight files, one per line)
 
 Note: Bin-specific weights (containing '#') are filtered out from the split.
 Only observable-level weights are included.
