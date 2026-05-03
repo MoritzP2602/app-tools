@@ -220,7 +220,7 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
         n_chunks = (n_bins + chunk_size - 1) // chunk_size
 
         markers = ['o', 's', '^', 'D', 'v', '<', '>']
-        colors = ['#3366FF', '#EE3311', '#33BB33', '#FF9933', 
+        colors = ['#EE3311', '#3366FF', '#33BB33', '#FF9933', 
                   '#9933FF', '#FF33CC', '#00CCCC', '#FFCC00']
         default_color = '#898C89'
 
