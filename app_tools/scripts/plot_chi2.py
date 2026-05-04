@@ -143,17 +143,19 @@ def build_series_labels(series_ids):
         label, _ = sid
         grouped.setdefault(label, []).append(sid)
 
-    series_labels = {}
+    series_labels      = {}
+    series_labels_html = {}
     duplicate_series_notes = []
     for label, group in grouped.items():
         if len(group) == 1:
-            series_labels[group[0]] = label
+            series_labels[group[0]]      = label
+            series_labels_html[group[0]] = label
             continue
         for idx, sid in enumerate(group, start=1):
-            label_display = f"{label} ({idx})"
-            series_labels[sid] = label_display
-            duplicate_series_notes.append((label_display, sid[1]))
-    return series_labels, duplicate_series_notes
+            series_labels[sid]      = f"{label}$^{{{idx}}}$"
+            series_labels_html[sid] = f"{label}<sup>{idx}</sup>"
+            duplicate_series_notes.append((f"{label}<sup>{idx}</sup>", sid[1]))
+    return series_labels, series_labels_html, duplicate_series_notes
 
 
 def filter_labels(labels, series_ids, requested_labels=None):
@@ -230,11 +232,17 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
             chunk_bin_ids  = bin_ids[start:end]
             bin_ids_length = max((len(str(bid)) for bid in chunk_bin_ids), default=1)
 
-            has_ratio_plot = default_bin_data is not None and len(plot_series) > 1
-            n_legend_items = len(plot_series)
-            ncols_legend   = min(3, n_legend_items)
-            nrows_legend   = (n_legend_items + ncols_legend - 1) // ncols_legend
-            
+            has_ratio_plot  = default_bin_data is not None and len(plot_series) > 1
+            n_legend_items  = len(plot_series)
+            max_label_len   = max((len(sid[0]) for sid in plot_series), default=0)
+            if max_label_len < 20:
+                ncols_legend = min(3, n_legend_items)
+            elif max_label_len < 40:
+                ncols_legend = min(2, n_legend_items)
+            else:
+                ncols_legend = 1
+            nrows_legend    = (n_legend_items + ncols_legend - 1) // ncols_legend
+
             title_height   = 0.6
             legend_height  = 0.4 * nrows_legend
             bottom_height  = max(0.8, 0.15 * bin_ids_length)
@@ -771,7 +779,7 @@ Output:
     if not series_ids:
         print("Error: selected labels do not map to any plot series.")
         return 1
-    series_labels, duplicate_series_notes = build_series_labels(series_ids)
+    series_labels, series_labels_html, duplicate_series_notes = build_series_labels(series_ids)
 
     default_label = None
     if args.default_label:
@@ -787,11 +795,11 @@ Output:
                            default_label=default_label,
                            log_scale=args.log,
                            output_dir=args.outdir)
-    create_index_html(command, 
-                      summaries=summaries, 
-                      data_dict=data_dict, 
+    create_index_html(command,
+                      summaries=summaries,
+                      data_dict=data_dict,
                       series_ids=series_ids,
-                      series_labels=series_labels,
+                      series_labels=series_labels_html,
                       duplicate_series_notes=duplicate_series_notes,
                       default_label=default_label,
                       input_file=", ".join(str(p) for p in json_paths),

@@ -10,20 +10,20 @@ class yodaLoader:
     yodas = {}
 
     def load(self, analysis_name):
-        base_path = self.paths[0]
-        gz_path = f"{base_path}/{analysis_name}.yoda.gz"
-        yoda_path = f"{base_path}/{analysis_name}.yoda"
-        if analysis_name not in self.yodas.keys():
+        if analysis_name in self.yodas:
+            return self.yodas[analysis_name]
+        for base_path in self.paths:
+            gz_path = f"{base_path}/{analysis_name}.yoda.gz"
+            yoda_path = f"{base_path}/{analysis_name}.yoda"
             if os.path.exists(gz_path):
                 ref_yoda = yoda.readYODA(gz_path)
+                self.yodas[analysis_name] = ref_yoda
+                return ref_yoda
             elif os.path.exists(yoda_path):
                 ref_yoda = yoda.readYODA(yoda_path)
-            else:
-                raise FileNotFoundError(f"Neither {gz_path} nor {yoda_path} found")
-            self.yodas[analysis_name] = ref_yoda
-            return ref_yoda
-        else:
-            return self.yodas[analysis_name]
+                self.yodas[analysis_name] = ref_yoda
+                return ref_yoda
+        raise FileNotFoundError(f"No reference YODA file found for {analysis_name} in any Rivet path")
 
 
 def main():
