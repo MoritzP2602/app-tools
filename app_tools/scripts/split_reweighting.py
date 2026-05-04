@@ -49,7 +49,7 @@ def copy_and_extend_params_file(src_params_path, dst_params_path, variation_para
 
 
 def parse_yoda_file(yoda_path, variation_pattern):
-    yd = yoda.read(str(yoda_path))
+    yd = yoda.readYODA(str(yoda_path))
     
     variations      = defaultdict(list)
     escaped_pattern = re.escape(variation_pattern)
@@ -77,7 +77,7 @@ def get_variation_numbers(variations_dict):
 
 
 def write_yoda_file(output_path, analysis_objects):
-    yoda.write(analysis_objects, str(output_path))
+    yoda.writeYODA(analysis_objects, str(output_path))
     return
 
 
@@ -248,7 +248,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
                 new_yaml_path = new_subdir_path / yaml_file.name
                 shutil.copy2(yaml_file, new_yaml_path)
             
-            if params_file and params_file.exists() or variation_params_map:
+            if (params_file and params_file.exists()) or variation_params_map:
                 new_params_path = new_subdir_path / "params.dat"
                 var_params = {}
                 for param_name, param_values in variation_params_map.items():
