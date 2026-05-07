@@ -88,9 +88,9 @@ def read_chi2_json(path):
         series_id = (label, source)
         obs_name  = obs.get("observable", "unknown")
         reduced_chi2 = obs.get("reduced_chi2")
+        chi2 = to_float_or_nan(obs.get("chi2", np.nan))
+        ndf  = to_float_or_nan(obs.get("ndf", np.nan))
         if reduced_chi2 is None:
-            chi2 = to_float_or_nan(obs.get("chi2", np.nan))
-            ndf  = to_float_or_nan(obs.get("ndf", np.nan))
             reduced_chi2 = chi2 / ndf if np.isfinite(chi2) and np.isfinite(ndf) and ndf > 0 else np.nan
         else:
             reduced_chi2 = to_float_or_nan(reduced_chi2)
@@ -105,7 +105,7 @@ def read_chi2_json(path):
             labels.append(label)
         if series_id not in series_ids:
             series_ids.append(series_id)
-        data_dict.setdefault(analysis_name, {}).setdefault(series_id, []).append((obs_id, reduced_chi2))
+        data_dict.setdefault(analysis_name, {}).setdefault(series_id, []).append((obs_id, chi2, ndf, reduced_chi2))
 
     for analysis_name, series_map in data_dict.items():
         for series_id, obs_tuples in series_map.items():
@@ -118,7 +118,7 @@ def read_chi2_json(path):
                     short_id = obs_id
                 short_ids.append(short_id)
             if len(set(short_ids)) == len(obs_ids):
-                series_map[series_id] = [(short_id, chi2_value) for (_, chi2_value), short_id in zip(obs_tuples, short_ids)]
+                series_map[series_id] = [(short_id, chi2, ndf, reduced_chi2) for (_, chi2, ndf, reduced_chi2), short_id in zip(obs_tuples, short_ids)]
     return summaries, data_dict, labels, series_ids, source_command
 
 
@@ -150,26 +150,121 @@ def merge_chi2_json_files(json_paths):
 
 
 def build_series_labels(series_ids):
-    """Build display labels and source notes for duplicate label names."""
-
-    grouped = {}
-    for sid in series_ids:
-        label, _ = sid
-        grouped.setdefault(label, []).append(sid)
-
+    """Build display labels for each series ID.
+    
+    Returns plain labels without superscripts. Superscripts are only applied
+    per-analysis in tables, not globally in plots.
+    """
     series_labels      = {}
     series_labels_html = {}
-    duplicate_series_notes = []
-    for label, group in grouped.items():
-        if len(group) == 1:
-            series_labels[group[0]]      = label
-            series_labels_html[group[0]] = label
+    
+    for sid in series_ids:
+        label = sid[0]
+        series_labels[sid]      = label
+        series_labels_html[sid] = label
+    
+    return series_labels, series_labels_html
+
+
+def assign_superscripts_per_analysis(data_dict, series_ids):
+    """Assign superscripts per analysis, not globally.
+    
+    For each analysis, if the same label appears more than once within that
+    analysis, assign superscripts. Superscripts are independent per analysis.
+    
+    Returns: {analysis_name: {series_id: display_label_html}}
+    """
+    per_analysis_labels_html = {}
+    per_analysis_labels_mpl = {}
+    
+    for analysis_name, series_map in data_dict.items():
+        analysis_series_ids = [sid for sid in series_ids if sid in series_map]
+        
+        grouped = {}
+        for sid in analysis_series_ids:
+            label = sid[0]
+            grouped.setdefault(label, []).append(sid)
+        
+        analysis_labels = {}
+        analysis_labels_mpl = {}
+        for label, group in grouped.items():
+            if len(group) == 1:
+                analysis_labels[group[0]] = label
+                analysis_labels_mpl[group[0]] = label
+            else:
+                for idx, sid in enumerate(group, start=1):
+                    analysis_labels[sid] = f"{label}<sup>{idx}</sup>"
+                    analysis_labels_mpl[sid] = f"{label}$^{{{idx}}}$"
+        
+        per_analysis_labels_html[analysis_name] = analysis_labels
+        per_analysis_labels_mpl[analysis_name] = analysis_labels_mpl
+    
+    return per_analysis_labels_html, per_analysis_labels_mpl
+
+
+def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels,
+                                   data_dict, series_labels_html, default_label=None):
+    """Build an HTML table showing per-analysis chi2 statistics.
+    
+    Columns: Label, Source, Reduced χ², Average χ²
+    One row per observable in the analysis.
+    """
+    def output_value(value):
+        if value is None or not np.isfinite(value):
+            return "nan"
+        return f"{value:.2f}"
+
+    analysis_data = data_dict.get(analysis_name, {})
+    if not analysis_data:
+        return ""
+
+    analysis_series_ids = [sid for sid in series_ids if sid in analysis_data]
+    if not analysis_series_ids:
+        return ""
+    
+    analysis_label_map = per_analysis_labels.get(analysis_name, {})
+    
+    table_html = """        <table>
+            <tr><th>Source</th><th>Label</th><th>Reduced χ²</th><th>Average χ²</th></tr>"""
+    
+    for sid in analysis_series_ids:
+        label_text = analysis_label_map.get(sid, sid[0])
+        source = sid[1]
+        bin_tuples = analysis_data[sid]
+        
+        if not bin_tuples:
             continue
-        for idx, sid in enumerate(group, start=1):
-            series_labels[sid]      = f"{label}$^{{{idx}}}$"
-            series_labels_html[sid] = f"{label}<sup>{idx}</sup>"
-            duplicate_series_notes.append((f"{label}<sup>{idx}</sup>", sid[1]))
-    return series_labels, series_labels_html, duplicate_series_notes
+        
+        chi2_list = []
+        ndf_list = []
+        reduced_chi2_list = []
+        for _, chi2, ndf, reduced_chi2 in bin_tuples:
+            if np.isfinite(reduced_chi2) and reduced_chi2 != -1:
+                chi2_list.append(chi2)
+                ndf_list.append(ndf)
+            reduced_chi2_list.append(reduced_chi2)
+        
+        if not chi2_list:
+            continue
+        
+        chi2_sum_obs = sum(chi2_list)
+        total_ndf_obs = sum(ndf_list)
+        reduced_chi2_obs = chi2_sum_obs / total_ndf_obs if total_ndf_obs > 0 else np.nan
+
+        avg_chi2 = sum(reduced_chi2_list) / len(reduced_chi2_list)
+        
+        table_html += f"""
+            <tr>
+                <td>{source}</td>
+                <td>{label_text}</td>
+                <td>{output_value(reduced_chi2_obs)}</td>
+                <td>{output_value(avg_chi2)}</td>
+            </tr>"""
+    
+    table_html += """
+        </table>"""
+    
+    return table_html
 
 
 def filter_labels(labels, series_ids, requested_labels=None):
@@ -222,7 +317,7 @@ def prepare_series_data(analysis_data, series_ids, default_label, analysis_name)
     all_bin_ids = set()
     for sid in plot_series:
         obs_list_sorted = sorted(analysis_data[sid], key=lambda x: extract_numeric_sort_key(x[0]))
-        bin_data = dict(obs_list_sorted)
+        bin_data = {obs_id: reduced_chi2 for obs_id, chi2, ndf, reduced_chi2 in obs_list_sorted}
         series_to_bin_data[sid] = bin_data
         all_bin_ids.update(bin_data.keys())
 
@@ -275,8 +370,13 @@ def compute_figure_layout(plot_series, has_ratio_plot, bin_ids_length):
 
 
 def plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin_ids,
-                         default_series_id, default_bin_data, series_labels, has_ratio_plot):
+                         default_series_id, default_bin_data, series_labels, has_ratio_plot,
+                         per_analysis_labels=None, analysis_name=None):
     """Draw all series on the main axis (and ratio axis if applicable)."""
+    analysis_label_map = {}
+    if per_analysis_labels and analysis_name:
+        analysis_label_map = per_analysis_labels.get(analysis_name, {})
+    
     plot_index = 0
     for sid in plot_series:
         bin_data = series_to_bin_data[sid]
@@ -289,7 +389,7 @@ def plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin
         valid_chi2 = [chi2_values[j] for j in valid_indices]
 
         is_default = bool(default_series_id and sid == default_series_id)
-        label      = series_labels.get(sid, sid[0])
+        label      = analysis_label_map.get(sid, series_labels.get(sid, sid[0]))
         if is_default and 'default' not in label.lower():
             label = f'{label} (default)'
         style = series_style(is_default, plot_index)
@@ -365,9 +465,8 @@ def configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, has_ratio_plot, ncols
 
 
 def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=None,
-                           log_scale=False, output_dir='chi2-plots'):
+                           per_analysis_labels=None, log_scale=False, output_dir='chi2-plots'):
     """Create one plot per analysis showing chi2/ndf for each observable."""
-
     os.makedirs(output_dir)
 
     for analysis_name in sorted(data_dict.keys()):
@@ -415,7 +514,8 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
             ax.set_yscale('log' if log_scale else 'linear')
 
             plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin_ids,
-                                 default_series_id, default_bin_data, series_labels, has_ratio_plot)
+                                 default_series_id, default_bin_data, series_labels, has_ratio_plot,
+                                 per_analysis_labels=per_analysis_labels, analysis_name=analysis_name)
             configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, has_ratio_plot, layout['ncols_legend'])
 
             if has_ratio_plot:
@@ -482,7 +582,7 @@ def read_grid_table(path):
 
 
 def chi2_from_summaries(summaries):
-    """Build label -> reduced_chi2 map from CHI2JSON summaries."""
+    """Build reduced_chi2 map from CHI2JSON summaries."""
     if not summaries:
         raise ValueError("No summaries found in chi2.json")
     chi2_by_label = {}
@@ -653,8 +753,7 @@ def group_plot_files(plot_files):
 
 
 def create_index_html(command, summaries=None, data_dict=None, series_ids=None, series_labels=None,
-                      duplicate_series_notes=None, default_label=None,
-                      input_file=None, source_command=None, output_dir="chi2-plots"):
+                      default_label=None, per_analysis_labels=None, input_file=None, source_command=None, output_dir="chi2-plots"):
     """Create an index.html file in the output directory to access all plot files."""
 
     plot_files = sorted(f for f in os.listdir(output_dir) if f.endswith((".pdf", ".png")))
@@ -662,7 +761,6 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
 
     series_ids             = series_ids             or []
     series_labels          = series_labels          or {}
-    duplicate_series_notes = duplicate_series_notes or []
     data_dict              = data_dict              or {}
 
     now = datetime.datetime.now().strftime("%A, %d. %B %Y %H:%M")
@@ -716,29 +814,17 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
         parts.append("""
         </table>""")
 
+    per_analysis_labels_html = per_analysis_labels or {}
     for group, files in sorted(exp_analysis_groups.items()):
         parts.append(f"""
         <h3>{group}</h3>""")
+        
+        table_html = build_per_analysis_chi2_table(group, series_ids, per_analysis_labels_html,
+                                                   data_dict, series_labels, default_label)
+        if table_html:
+            parts.append("\n" + table_html)
+        
         pngs = [f for f in files if f.endswith('.png')]
-        avg_entries = []
-
-        for sid in series_ids:
-            bin_tuples = data_dict.get(group, {}).get(sid, [])
-            chi2_vals = [v for _, v in bin_tuples if np.isfinite(v)]
-            avg = (sum(chi2_vals) / len(chi2_vals)) if chi2_vals else None
-            avg_entries.append((sid, avg))
-
-        if any(avg is not None for _, avg in avg_entries):
-            parts.append("""
-        <div style='font-size:1.1em; margin-bottom:0.3em;'><b>Average chi2 per YODA:</b><ul style='margin:0.2em 0 0.5em 1em;'>""")
-            for sid, avg in avg_entries:
-                if avg is not None:
-                    label = series_labels.get(sid, sid[0])
-                    if default_label and sid[0] == default_label and 'default' not in label.lower():
-                        label = f'{label} (default)'
-                    parts.append(f'<li>{label}: {avg:.2f}</li>')
-            parts.append('</ul></div>')
-
         for png in sorted(pngs):
             pdf = png.replace('.png', '.pdf')
             parts.append(f"""
@@ -747,15 +833,7 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
                 parts.append(f'<a href="{pdf}">Download PDF</a>')
             parts.append('</div>')
 
-    if duplicate_series_notes:
-        parts.append("""
-        <h3>Label clarification</h3>
-        <ul>""")
-        for label, source in duplicate_series_notes:
-            parts.append(f"<li>{label}: {source}</li>")
-        parts.append('</ul>')
-
-    parts.append(f"""
+    parts.append(f"""    
         <footer style="clear:both; margin-top:3em; padding-top:3em">
         <p>Generated at {now}</p>
         <p>Created with command: <pre>{command}</pre></p>
@@ -871,7 +949,8 @@ def main():
     if not series_ids:
         print("Error: selected labels do not map to any plot series.")
         return 1
-    series_labels, series_labels_html, duplicate_series_notes = build_series_labels(series_ids)
+    series_labels, series_labels_html = build_series_labels(series_ids)
+    per_analysis_labels_html, per_analysis_labels_mpl = assign_superscripts_per_analysis(data_dict, series_ids)
 
     default_label = None
     if args.default_label:
@@ -885,6 +964,7 @@ def main():
 
     plot_chi2_per_analysis(data_dict, series_ids, series_labels,
                            default_label=default_label,
+                           per_analysis_labels=per_analysis_labels_mpl,
                            log_scale=args.log,
                            output_dir=args.outdir)
     create_index_html(command,
@@ -892,8 +972,8 @@ def main():
                       data_dict=data_dict,
                       series_ids=series_ids,
                       series_labels=series_labels_html,
-                      duplicate_series_notes=duplicate_series_notes,
                       default_label=default_label,
+                      per_analysis_labels=per_analysis_labels_html,
                       input_file=", ".join(str(p) for p in json_paths),
                       source_command="\n".join(source_commands),
                       output_dir=args.outdir)

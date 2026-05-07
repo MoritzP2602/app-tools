@@ -465,8 +465,14 @@ def analyses_chi2(obs_chi2s, debug=False):
 			analysis = obs_name.split("/")[1].split(":")[0]
 		except (IndexError, AttributeError):
 			analysis = "unknown"
-		previous_chi2, previous_ndf = chi2_dict.get(analysis, (0.0, 0.0))
-		chi2_dict[analysis] = (previous_chi2 + chi2, previous_ndf + ndf)
+		if analysis not in chi2_dict:
+			chi2_dict[analysis] = (0.0, 0.0, 0.0, 0.0)
+		previous_chi2, previous_ndf, previous_avg, previous_count = chi2_dict[analysis]
+		reduced_chi2 = (chi2 / ndf) if ndf > 0 and np.isfinite(chi2) else np.nan
+		if np.isfinite(reduced_chi2):
+			previous_avg += reduced_chi2
+			previous_count += 1.0
+		chi2_dict[analysis] = (previous_chi2 + chi2, previous_ndf + ndf, previous_avg, previous_count)
 	if debug: print(f"  Results for analyses breakdown: {chi2_dict}.")
 	return chi2_dict
 
@@ -655,14 +661,16 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 		)
 		if show_analyses:
 			for a in s["analysis_chi2"].keys():
+				analysis_chi2, analysis_ndf, analysis_avg_sum, analysis_count = s["analysis_chi2"][a]
+				analysis_avg = (analysis_avg_sum / analysis_count) if analysis_count > 0 else np.nan
 				table.append(
 					[
 						f"- {a}",
-						f"{s['analysis_chi2'][a][0]}",
-						f"{s['analysis_chi2'][a][1]:.0f}",
-						f"{(s['analysis_chi2'][a][0] / s['analysis_chi2'][a][1])}" \
-							if s['analysis_chi2'][a][1] > 0 else "nan",
-						""
+						f"{analysis_chi2}",
+						f"{analysis_ndf:.0f}",
+						f"{(analysis_chi2 / analysis_ndf)}" \
+							if analysis_ndf > 0 else "nan",
+						f"{analysis_avg}" if np.isfinite(analysis_avg) else "nan"
 					]
 				)
 
