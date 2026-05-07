@@ -6,8 +6,9 @@ import rivet
 
 
 class yodaLoader:
-    paths = rivet.getAnalysisRefPaths()
-    yodas = {}
+    def __init__(self):
+        self.paths = rivet.getAnalysisRefPaths()
+        self.yodas = {}
 
     def load(self, analysis_name):
         if analysis_name in self.yodas:
@@ -99,7 +100,7 @@ Warnings are printed for observables that cannot be found in Rivet references.
         except (FileNotFoundError, KeyError):
             ignored_count += 1
             continue
-        except Exception as e:
+        except Exception:
             ignored_count += 1
             continue
     

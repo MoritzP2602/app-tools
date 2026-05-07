@@ -229,9 +229,9 @@ class ParameterModel:
 class ParameterGrid:
     def __init__(self, points=None, parameter_order=None):
         self.points = points or []
-        self.parameter_order = parameter_order or self._infer_parameter_order()
+        self.parameter_order = parameter_order or self.infer_parameter_order()
 
-    def _infer_parameter_order(self):
+    def infer_parameter_order(self):
         if not self.points:
             return []
         return list(self.points[0].values.keys())
@@ -239,10 +239,10 @@ class ParameterGrid:
     def parameter_names(self):
         if self.parameter_order:
             return list(self.parameter_order)
-        return self._infer_parameter_order()
+        return self.infer_parameter_order()
 
     @staticmethod
-    def _allocate_points_per_sector(total, nsectors):
+    def allocate_points_per_sector(total, nsectors):
         base = total // nsectors
         rem = total % nsectors
         return [base + (1 if i < rem else 0) for i in range(nsectors)]
@@ -256,21 +256,21 @@ class ParameterGrid:
             np.random.seed(seed)
 
         sectors = model.build_sectors()
-        allocation = cls._allocate_points_per_sector(num_points, len(sectors))
+        allocation = cls.allocate_points_per_sector(num_points, len(sectors))
         points = []
 
         for sector, n_in_sector in zip(sectors, allocation):
             if n_in_sector <= 0:
                 continue
             if sampling_mode == "uniform":
-                points.extend(cls._sample_uniform_for_sector(model, n_in_sector, sector))
+                points.extend(cls.sample_uniform_for_sector(model, n_in_sector, sector))
             else:
-                points.extend(cls._sample_random_for_sector(model, n_in_sector, sector))
+                points.extend(cls.sample_random_for_sector(model, n_in_sector, sector))
 
         return cls(points=points, parameter_order=model.order)
 
     @classmethod
-    def _sample_random_for_sector(cls, model, npoints, sector):
+    def sample_random_for_sector(cls, model, npoints, sector):
         points = []
         for _ in range(npoints):
             sampled = OrderedDict()
@@ -283,7 +283,7 @@ class ParameterGrid:
         return points
 
     @classmethod
-    def _sample_uniform_for_sector(cls, model, npoints, sector):
+    def sample_uniform_for_sector(cls, model, npoints, sector):
         if model.has_dynamic():
             fail("uniform mode is incompatible with dynamic bounds")
 
@@ -548,7 +548,7 @@ class ParameterGrid:
             return table_file
 
     @staticmethod
-    def _load_nominal_values(nominal_path):
+    def load_nominal_values(nominal_path):
         try:
             if nominal_path.endswith(".json"):
                 with open(nominal_path) as f:
@@ -570,18 +570,18 @@ class ParameterGrid:
             fail(f"No valid parameters found in nominal file '{nominal_path}'")
         return nominal_values
 
-    def _sector_bounds_by_id(self):
+    def sector_bounds_by_id(self):
         by_id = OrderedDict()
         for point in self.points:
             if point.sector_id not in by_id:
                 by_id[point.sector_id] = point.sector_bounds
         return by_id
 
-    def _prepare_nominal_values_by_sector(self, nominal_values):
+    def prepare_nominal_values_by_sector(self, nominal_values):
         if not self.points:
             return {}
 
-        sector_bounds_by_id = self._sector_bounds_by_id()
+        sector_bounds_by_id = self.sector_bounds_by_id()
         sector_ids = list(sector_bounds_by_id.keys())
         param_names = self.parameter_names()
 
@@ -648,8 +648,8 @@ class ParameterGrid:
 
     def write_reweighting(self, nominal_path, template_name, template_content, outdir, precision=6):
         os.makedirs(outdir, exist_ok=True)
-        nominal_values = self._load_nominal_values(nominal_path)
-        nominal_by_sector = self._prepare_nominal_values_by_sector(nominal_values)
+        nominal_values = self.load_nominal_values(nominal_path)
+        nominal_by_sector = self.prepare_nominal_values_by_sector(nominal_values)
 
         grouped = OrderedDict()
         for point in self.points:
@@ -686,10 +686,10 @@ class ParameterGrid:
         return
 
     @staticmethod
-    def _sanitize_plot_name(name):
+    def sanitize_plot_name(name):
         return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name))
 
-    def _collect_sector_internal_boundaries(self):
+    def collect_sector_internal_boundaries(self):
         intervals_by_param = OrderedDict()
         for point in self.points:
             for pname, bounds in point.sector_bounds.items():
@@ -736,7 +736,7 @@ class ParameterGrid:
             fail("plot mode requires at least 2 parameters")
 
         os.makedirs(outdir, exist_ok=True)
-        internal_bounds = self._collect_sector_internal_boundaries()
+        internal_bounds = self.collect_sector_internal_boundaries()
 
         pairs = list(itertools.combinations(names, 2))
         for xname, yname in pairs:
@@ -757,7 +757,7 @@ class ParameterGrid:
             ax.grid(True, alpha=0.2)
             fig.tight_layout()
 
-            fname = f"{self._sanitize_plot_name(xname)}__{self._sanitize_plot_name(yname)}.{fmt}"
+            fname = f"{self.sanitize_plot_name(xname)}__{self.sanitize_plot_name(yname)}.{fmt}"
             fpath = os.path.join(outdir, fname)
             fig.savefig(fpath, dpi=dpi)
             plt.close(fig)
@@ -888,12 +888,11 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
         with open(os.path.join(target, template_name), "w") as f:
             f.write(rendered)
 
-    combined_reweighting_file = None
     if nominal_path is not None:
         if not reweighting_variations:
             fail("No valid tune parameter sets found for combined reweighting runcard generation")
 
-        nominal_values = ParameterGrid._load_nominal_values(nominal_path)
+        nominal_values = ParameterGrid.load_nominal_values(nominal_path)
         param_dict = OrderedDict()
         for name in template_fields:
             if name not in nominal_values:
@@ -918,8 +917,7 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
 
         combined_reweighting_dir = os.path.join(outdir, "rew")
         os.makedirs(combined_reweighting_dir, exist_ok=True)
-        combined_reweighting_file = os.path.join(combined_reweighting_dir, template_name)
-        with open(combined_reweighting_file, "w") as f:
+        with open(os.path.join(combined_reweighting_dir, template_name), "w") as f:
             f.write(template_content.format(**param_dict))
     return
 
@@ -1232,8 +1230,8 @@ def main():
         grid, info_lines = ParameterGrid.from_minmax(model, defaults)
         grid.write_scan(args.outdir, template_name, template_content)
         write_minmax_info(sidecar_path(args.outdir, ".grid.dat"), info_lines)
-        print_non_sampling_summary(command="minmax", source_msg=f"parameter-file: {args.parameters}", 
-                                   defaults=args.defaults,)
+        print_non_sampling_summary(command="minmax", source_msg=f"parameter-file: {args.parameters}",
+                                   defaults=args.defaults)
         print_outputs(args.outdir, wrote_table=True, wrote_reweighting=False)
         return
 

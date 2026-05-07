@@ -27,6 +27,7 @@ def merge_jsons_in_dir(json_dir, keep_dir=False, out_file=None):
                         if isinstance(merged[k], list) and isinstance(v, list):
                             merged[k].extend(v)
                         else:
+                            print(f"Warning: Duplicate key '{k}' in {fname} overwrites previous value.")
                             merged[k] = v
                     else:
                         merged[k] = v

@@ -36,7 +36,7 @@ def parse_variations_file(variations_path):
 
 def copy_and_extend_params_file(src_params_path, dst_params_path, variation_params):
     params_lines = []
-    if src_params_path.exists():
+    if src_params_path is not None and src_params_path.exists():
         with open(src_params_path, 'r') as f:
             params_lines = f.readlines()
     with open(dst_params_path, 'w') as f:
@@ -231,15 +231,15 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
                 params_idx = param_offset + var_idx
                 sequential_output_idx += 1
 
-            new_subdir_name = f"{new_idx:0{num_digits}d}"
-            new_subdir_path = output_path / new_subdir_name
-            new_subdir_path.mkdir(parents=True, exist_ok=True)
-            
             yd = variations.get(variation_key, [])
             if not yd:
                 print(f"  Warning: No analysis objects found for variation v{var_num}")
                 continue
-            
+
+            new_subdir_name = f"{new_idx:0{num_digits}d}"
+            new_subdir_path = output_path / new_subdir_name
+            new_subdir_path.mkdir(parents=True, exist_ok=True)
+
             new_yoda_name = f"{new_idx:0{num_digits}d}.yoda"
             new_yoda_path = new_subdir_path / new_yoda_name
             write_yoda_file(new_yoda_path, yd)
@@ -255,8 +255,8 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
                     if params_idx < len(param_values):
                         var_params[param_name] = param_values[params_idx]
                 
-                src_params = params_file if params_file and params_file.exists() else Path("/dev/null")
-                copy_and_extend_params_file(src_params if src_params.exists() else Path(), new_params_path, var_params)
+                src_params = params_file if params_file and params_file.exists() else None
+                copy_and_extend_params_file(src_params, new_params_path, var_params)
 
             if subdir is not None:
                 source_str = f"{subdir.name}/{yoda_file.name}:v{var_num}"

@@ -131,7 +131,10 @@ Scaling example:
                     print(f"Warning: Weight '{key}' appears in multiple files.")
                 else: all_seen_keys.add(key)
                 value, comment = weights[key]
-                out.write(f"{key} {value:.3f} {comment}\n")
+                if comment:
+                    out.write(f"{key} {value:.3f} {comment}\n")
+                else:
+                    out.write(f"{key} {value:.3f}\n")
     print(f"\nOutput written to: {args.output}.\n")
 
 

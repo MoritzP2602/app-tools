@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+from collections import defaultdict
 from pathlib import Path
 from tabulate import tabulate
 
@@ -19,33 +20,33 @@ def check_yoda_version():
 		raise RuntimeError(f"YODA >= {'.'.join(map(str, MIN_YODA))} is required, found {yoda.__version__}")
 
 
-def read_weights(wfile):
-	"""Read observable/bin weights from text file."""
+def read_text_lines(path):
+	"""Yield non-empty, non-comment lines from a text file (stripped)."""
 
-	weights = {}
-	with open(wfile, "r") as f:
+	with open(path, "r") as f:
 		for line in f:
 			line = line.strip()
 			if not line or line.startswith("#"):
 				continue
-			parts = line.split()
-			if len(parts) < 2:
-				continue
-			weights[parts[0]] = float(parts[1])
+			yield line
+
+
+def read_weights(wfile):
+	"""Read observable/bin weights from text file."""
+
+	weights = {}
+	for line in read_text_lines(wfile):
+		parts = line.split()
+		if len(parts) < 2:
+			continue
+		weights[parts[0]] = float(parts[1])
 	return weights
 
 
 def read_analyses(afile):
 	"""Read analyses allow-list from text file."""
 
-	analyses = set()
-	with open(afile, "r") as f:
-		for line in f:
-			line = line.strip()
-			if not line or line.startswith("#"):
-				continue
-			analyses.add(line)
-	return analyses
+	return set(read_text_lines(afile))
 
 
 def read_output_command(output_file):
@@ -85,15 +86,7 @@ def accepted_type(obj):
 
 	if not hasattr(obj, "type") or not callable(obj.type):
 		return False
-	if is_estimate(obj):
-		return True
-	if is_histo(obj):
-		return True
-	if is_profile(obj):
-		return True
-	if is_scatter(obj):
-		return True
-	return False
+	return is_estimate(obj) or is_histo(obj) or is_profile(obj) or is_scatter(obj)
 
 
 def split_variation_tag(path):
@@ -124,7 +117,7 @@ class YodaLoader:
 	def __init__(self):
 		self.paths = rivet.getAnalysisRefPaths()
 		self.yodas = {}
-		self.error_counts = {}
+		self.error_counts = defaultdict(lambda: defaultdict(int))
 
 	def load(self, analysis_name):
 		if analysis_name in self.yodas:
@@ -147,7 +140,7 @@ class YodaLoader:
 
 		self.yodas[analysis_name] = ref_yoda
 		return ref_yoda
-	
+
 	def get_variation_tags(self, yoda_file, pattern, analyses_set=None):
 		tags = set()
 		yd = yoda.readYODA(yoda_file)
@@ -163,22 +156,22 @@ class YodaLoader:
 				continue
 			tags.add(tag)
 		return sorted(tags, key=tag_sort_key)
-	
+
 	def extract_bins_profile(self, obj):
 		if hasattr(obj, "path") and callable(obj.path):
 			path = obj.path()
 		else:
 			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable path() method.")
-		
-		# --- Note ------------------------------------------------------------------------------- #
-		# For Profile objects, mkScatter() and point.errs() returns errors equal to zero.          #
-	    # This means, we have to use Profile specific methods in this case (tested for Profile1D). #
-		# ---------------------------------------------------------------------------------------- #
+
+		# --- Note ----------------------------------------------------------------------------- #
+		# For Profile objects, mkScatter() and point.errs() returns errors equal to zero.        #
+		# This means we have to use Profile specific methods in this case (tested for Profile1D). #
+		# --------------------------------------------------------------------------------------- #
 
 		dim = obj.dim()
 		if dim != 2:
 			print(f"Warning: Profile object with dim != 2 encountered. "
-		 		  f"Please double check the results for this observable, obj: {obj}.")
+				  f"Please double check the results for this observable, obj: {obj}.")
 		bin_dict = {}
 		for i, bin in enumerate(obj.bins()):
 			bin_name = f"{path}#{i}"
@@ -190,7 +183,7 @@ class YodaLoader:
 			else: err = np.nan
 			bin_dict[bin_name] = (val, err)
 		return bin_dict
-	
+
 	def extract_bins_scatter(self, obj):
 		if hasattr(obj, "path") and callable(obj.path):
 			path = obj.path()
@@ -199,7 +192,7 @@ class YodaLoader:
 		if not hasattr(obj, "mkScatter") or not callable(obj.mkScatter):
 			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable mkScatter() method.")
 		scatter = obj.mkScatter()
-		
+
 		dim = scatter.dim()
 		bin_dict = {}
 		for i, p in enumerate(scatter.points()):
@@ -213,22 +206,17 @@ class YodaLoader:
 			bin_dict[bin_name] = (val, err)
 		return bin_dict
 
-	def extract_bins(self, obj):	
-		if is_estimate(obj):
-			return self.extract_bins_scatter(obj)
-		elif is_scatter(obj):
-			return self.extract_bins_scatter(obj)
-		elif is_histo(obj):
-			return self.extract_bins_scatter(obj)
-		elif is_profile(obj):
+	def extract_bins(self, obj):
+		if is_profile(obj):
 			return self.extract_bins_profile(obj)
-		else:
-			raise TypeError(f"Unsupported YODA object type: {type(obj).__name__}")
+		if is_estimate(obj) or is_scatter(obj) or is_histo(obj):
+			return self.extract_bins_scatter(obj)
+		raise TypeError(f"Unsupported YODA object type: {type(obj).__name__}")
 
 	def get_bin_differences(self, yoda_file, weights_dict=None, analyses_set=None, pattern=None, debug=False):
 		if debug: print(f"Executing get_bin_differences for {yoda_file}")
 
-		self.error_counts[yoda_file] = {}
+		skips = self.error_counts[yoda_file]
 
 		if analyses_set:
 			ana_union = "|".join(re.escape(a) for a in sorted(analyses_set))
@@ -248,23 +236,23 @@ class YodaLoader:
 			if pattern is not None:
 				if tag is None or pattern not in tag:
 					if debug: print(f"  Skipping observable {obs_name}. Does not match pattern '{pattern}'.")
-					self.error_counts[yoda_file]["Observable [tag] does not match pattern"] = self.error_counts[yoda_file].get("Observable [tag] does not match pattern", 0) + 1
+					skips["Observable [tag] does not match pattern"] += 1
 					continue
 
 			if weights_dict is not None and (bare_obs_name not in obs_weights_set):
 				if debug: print(f"  Skipping observable {obs_name}. Not in weights file.")
-				self.error_counts[yoda_file]["Observable not in weights file"] = self.error_counts[yoda_file].get("Observable not in weights file", 0) + 1
+				skips["Observable not in weights file"] += 1
 				continue
 
 			try:
 				analysis_name = obs_name_ref.split("/")[1].split(":")[0]
 			except (IndexError, AttributeError):
 				if debug: print(f"  Skipping observable {obs_name}. Failed to parse analysis name.")
-				self.error_counts[yoda_file]["Failed to parse analysis name"] = self.error_counts[yoda_file].get("Failed to parse analysis name", 0) + 1
+				skips["Failed to parse analysis name"] += 1
 				continue
 			if analyses_set is not None and analysis_name not in analyses_set:
 				if debug: print(f"  Skipping observable {obs_name}. Analysis {analysis_name} not in analyses list.")
-				self.error_counts[yoda_file]["Analysis name not in list"] = self.error_counts[yoda_file].get("Analysis name not in list", 0) + 1
+				skips["Analysis name not in list"] += 1
 				continue
 
 			try:
@@ -274,18 +262,18 @@ class YodaLoader:
 				histogram_ref = yd_ref.get(obs_ref)
 				if histogram_ref is None:
 					if debug: print(f"  Skipping observable {obs_name}. Reference data not found in /REF/{analysis_name}.")
-					self.error_counts[yoda_file]["Reference data not found"] = self.error_counts[yoda_file].get("Reference data not found", 0) + 1
+					skips["Reference data not found"] += 1
 					continue
 			except (FileNotFoundError, KeyError) as e:
 				if debug: print(f"  Skipping observable {obs_name}. Error loading reference data for {analysis_name}: {e}.")
-				self.error_counts[yoda_file]["Error loading reference data"] = self.error_counts[yoda_file].get("Error loading reference data", 0) + 1
+				skips["Error loading reference data"] += 1
 				continue
 
 			if debug: print(f"  Processing observable {obs_name}, type {histogram.type()}, "
 							f"with reference {obs_ref}, type {histogram_ref.type()}.")
 			if not (accepted_type(histogram) and accepted_type(histogram_ref)):
 				if debug: print(f"  Skipping observable {obs_name}. Unsupported object type in one of the datasets.")
-				self.error_counts[yoda_file]["Unsupported object type"] = self.error_counts[yoda_file].get("Unsupported object type", 0) + 1
+				skips["Unsupported object type"] += 1
 				continue
 
 			bin_dict = self.extract_bins(histogram)
@@ -293,18 +281,16 @@ class YodaLoader:
 
 			if len(bin_dict) != len(bin_dict_ref):
 				if debug: print(f"  Skipping observable {obs_name}. Bin count mismatch between data and reference: "
-						  		f"data = {len(bin_dict)}, ref = {len(bin_dict_ref)}.")
-					
-				self.error_counts[yoda_file]["Bin count mismatch"] = self.error_counts[yoda_file].get("Bin count mismatch", 0) + 1
+								f"data = {len(bin_dict)}, ref = {len(bin_dict_ref)}.")
+				skips["Bin count mismatch"] += 1
 				continue
 
-			obs_dict[obs_name] = {}
 			for bin_name, (data_val, data_err) in bin_dict.items():
 				bare_bin_name = strip_variation_tag(bin_name)
 				bin_name_ref = f"/REF" + bare_bin_name if not bare_bin_name.startswith("/REF") else bare_bin_name
 				if bin_name_ref not in bin_dict_ref:
 					if debug: print(f"    Skipping bin {bin_name}. Not found in reference for {obs_name}.")
-					self.error_counts[yoda_file]["Bin not found in reference data"] = self.error_counts[yoda_file].get("Bin not found in reference data", 0) + 1
+					skips["Bin not found in reference data"] += 1
 					continue
 
 				ref_val, ref_err = bin_dict_ref[bin_name_ref]
@@ -312,19 +298,21 @@ class YodaLoader:
 				err = np.sqrt(data_err ** 2 + ref_err ** 2)
 				if err == 0 or np.isnan(err):
 					if debug: print(f"    Skipping bin {bin_name}. Invalid combined error {err}.")
-					self.error_counts[yoda_file]["Invalid combined error"] = self.error_counts[yoda_file].get("Invalid combined error", 0) + 1
+					skips["Invalid combined error"] += 1
 					continue
 
 				if not weights_dict:
 					bin_weight = 1.0
 				else:
 					bin_weight = weights_dict.get(bare_bin_name, weights_dict.get(bare_obs_name, 0.0))
-				bin_name = bare_bin_name if pattern is not None else bin_name
-				obs_dict[obs_name][bin_name] = (diff, err, bin_weight)
+				key = bare_bin_name if pattern is not None else bin_name
+				obs_dict.setdefault(obs_name, {})[key] = (diff, err, bin_weight)
 		return obs_dict
 
 	def get_valid_bins(self, up_file, dn_file, weights_dict=None, analyses_set=None, debug=False):
 		if debug: print(f"Executing get_valid_bins for {up_file}, {dn_file}")
+
+		skips = self.error_counts["Envelope"]
 
 		obs_weights_set = set()
 		if weights_dict is not None:
@@ -339,21 +327,20 @@ class YodaLoader:
 
 		for obs_name in candidate_obs:
 			if weights_dict is not None and (obs_name not in obs_weights_set):
-				self.error_counts["Envelope"]["Observable not in weights file"] = self.error_counts["Envelope"].get("Observable not in weights file", 0) + 1
+				skips["Observable not in weights file"] += 1
 				continue
 			try:
 				analysis_name = obs_name.split("/")[1].split(":")[0]
 			except (IndexError, AttributeError):
 				if debug: print(f"  Skipping observable {obs_name}. Failed to parse analysis name.")
-				self.error_counts["Envelope"]["Failed to parse analysis name"] = self.error_counts["Envelope"].get("Failed to parse analysis name", 0) + 1
+				skips["Failed to parse analysis name"] += 1
 				continue
 			if analyses_set is not None and analysis_name not in analyses_set:
 				if debug: print(f"  Skipping observable {obs_name}. Analysis {analysis_name} not in analyses list.")
-				self.error_counts["Envelope"]["Analysis name not in list"] = self.error_counts["Envelope"].get("Analysis name not in list", 0) + 1
+				skips["Analysis name not in list"] += 1
 				continue
 
 			try:
-				analysis_name = obs_name.split("/")[1].split(":")[0]
 				ref_yoda = self.load(analysis_name)
 				ref_path = f"/REF/{analysis_name}/{obs_name.split('/')[-1]}"
 
@@ -363,14 +350,14 @@ class YodaLoader:
 
 				if obj_up is None or obj_dn is None or obj_ref is None:
 					if debug: print(f"  Skipping observable {obs_name}. Missing object found.")
-					self.error_counts["Envelope"]["Observable data not found"] = self.error_counts["Envelope"].get("Observable data not found", 0) + 1
+					skips["Observable data not found"] += 1
 					continue
 
 				if debug: print(f"  Processing observable {obs_name} for envelope validation, type up: {obj_up.type()}, "
 								f"dn: {obj_dn.type()}, reference type {obj_ref.type()}.")
 				if not (accepted_type(obj_up) and accepted_type(obj_dn) and accepted_type(obj_ref)):
 					if debug: print(f"  Skipping observable {obs_name}. Unsupported object type in one of the datasets.")
-					self.error_counts["Envelope"]["Unsupported object type"] = self.error_counts["Envelope"].get("Unsupported object type", 0) + 1
+					skips["Unsupported object type"] += 1
 					continue
 
 				bin_dict_up  = self.extract_bins(obj_up)
@@ -379,20 +366,20 @@ class YodaLoader:
 
 				if len(bin_dict_up) != len(bin_dict_dn) or len(bin_dict_up) != len(bin_dict_ref):
 					if debug: print(f"  Skipping observable {obs_name}. Bin count mismatch: "
-							  		f"up = {len(bin_dict_up)}, dn = {len(bin_dict_dn)}, ref = {len(bin_dict_ref)}.")
-					self.error_counts["Envelope"]["Bin count mismatch"] = self.error_counts["Envelope"].get("Bin count mismatch", 0) + 1
+									f"up = {len(bin_dict_up)}, dn = {len(bin_dict_dn)}, ref = {len(bin_dict_ref)}.")
+					skips["Bin count mismatch"] += 1
 					continue
 
 				for bin_name in bin_dict_up.keys():
 					bin_name_ref = f"/REF" + bin_name if not bin_name.startswith("/REF") else bin_name
 					if bin_name not in bin_dict_dn or bin_name_ref not in bin_dict_ref:
 						if debug: print(f"    Skipping bin {bin_name}. Not found in all datasets for {obs_name}.")
-						self.error_counts["Envelope"]["Bin not found in all datasets"] = self.error_counts["Envelope"].get("Bin not found in all datasets", 0) + 1
+						skips["Bin not found in all datasets"] += 1
 						continue
 					up_val, dn_val, ref_val = bin_dict_up[bin_name][0], bin_dict_dn[bin_name][0], bin_dict_ref[bin_name_ref][0]
 					if np.isnan(up_val) or np.isnan(dn_val) or np.isnan(ref_val):
 						if debug: print(f"    Skipping bin {bin_name}. NaN value encountered in one of the datasets for {obs_name}.")
-						self.error_counts["Envelope"]["NaN value in datasets"] = self.error_counts["Envelope"].get("NaN value in datasets", 0) + 1
+						skips["NaN value in datasets"] += 1
 						continue
 
 					min_val, max_val = min(up_val, dn_val), max(up_val, dn_val)
@@ -403,48 +390,52 @@ class YodaLoader:
 
 			except Exception as e:
 				if debug: print(f"  Skipping observable {obs_name}. Error: {e}.")
-				self.error_counts["Envelope"]["Error processing observable"] = self.error_counts["Envelope"].get("Error processing observable", 0) + 1
+				skips["Error processing observable"] += 1
 				continue
 
 		if debug: print(f"  Envelope validation: {len(valid_bins_list)} valid bins, "
-				  		f"{len(invalid_bins_list)} invalid bins (total: {len(valid_bins_list) + len(invalid_bins_list)})")
+						f"{len(invalid_bins_list)} invalid bins (total: {len(valid_bins_list) + len(invalid_bins_list)})")
 		return valid_bins_list
+
+
+def chi2_terms(bins, weighted=False, valid_bins=None, debug=False):
+	"""Sum chi2 contributions over a flat dict of bins. Returns (chi2_sum, ndf_sum)."""
+
+	chi2_sum = 0.0
+	ndf_sum  = 0.0
+	for bin_name, (diff, err, weight) in bins.items():
+		if valid_bins is not None and bin_name not in valid_bins:
+			if debug: print(f"    Skipping bin {bin_name}. Not in valid (enveloped) bins list.")
+			continue
+		if err == 0 or np.isnan(err):
+			if debug: print(f"    Skipping bin {bin_name}. Invalid error {err}.")
+			continue
+		if weight <= 0 or np.isnan(weight):
+			if debug: print(f"    Skipping bin {bin_name}. NaN or zero weight {weight}.")
+			continue
+
+		term = (diff ** 2) / err ** 2
+		if not np.isfinite(term):
+			if debug: print(f"    Skipping bin {bin_name}. Non-finite term encountered.")
+			continue
+		chi2_sum += (weight ** 2) * term if weighted else term
+		ndf_sum  += 1.0
+	return chi2_sum, ndf_sum
 
 
 def global_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
 	"""Compute global chi2 and ndf over all bins."""
 
 	if debug: print("Executing global_chi2")
+	if debug: print(f"  Processing all observables with total bins: "
+					+ str(sum(len(bins) for bins in obs_dict.values())))
 
 	chi2_sum = 0.0
 	ndf_sum  = 0.0
-
-	if debug: print(f"  Processing all observables with total bins: "
-				 	+ str(sum(len(bins) for bins in obs_dict.values())))
 	for _, bins in obs_dict.items():
-		for bin_name, (diff, err, weight) in bins.items():
-			if valid_bins is not None and bin_name not in valid_bins:
-				if debug: print(f"    Skipping bin {bin_name}. Not in valid (enveloped) bins list.")
-				continue
-			if err == 0 or np.isnan(err):
-				if debug: print(f"    Skipping bin {bin_name}. Invalid error {err}.")
-				continue
-			if weight <= 0 or np.isnan(weight):
-				if debug: print(f"    Skipping bin {bin_name}. NaN or zero weight {weight}.")
-				continue
-
-			den = err ** 2
-			term = (diff ** 2) / den
-			if not np.isfinite(term):
-				if debug: print(f"    Skipping bin {bin_name}. Non-finite term encountered.")
-				continue
-			if weighted:
-				chi2_sum += (weight ** 2) * term
-				# ndf_sum  += weight ** 2
-				ndf_sum  += 1.0
-			else:
-				chi2_sum += term
-				ndf_sum  += 1.0
+		chi2, ndf = chi2_terms(bins, weighted=weighted, valid_bins=valid_bins, debug=debug)
+		chi2_sum += chi2
+		ndf_sum  += ndf
 	if debug: print(f"  Global chi2: {chi2_sum}, ndf: {ndf_sum}.")
 	return chi2_sum, ndf_sum
 
@@ -456,35 +447,10 @@ def obs_chi2(obs_dict, weighted=False, valid_bins=None, debug=False):
 
 	chi2_dict = {}
 	for obs, bins in obs_dict.items():
-		chi2_sum = 0.0
-		ndf_sum  = 0.0
-
 		if debug: print(f"  Processing observable {obs} with {len(bins)} bins.")
-		for bin_name, (diff, err, weight) in bins.items():
-			if valid_bins is not None and bin_name not in valid_bins:
-				if debug: print(f"    Skipping bin {bin_name}. Not in valid (enveloped) bins list.")
-				continue
-			if err == 0 or np.isnan(err):
-				if debug: print(f"    Skipping bin {bin_name}. Invalid error {err}.")
-				continue
-			if weight <= 0 or np.isnan(weight):
-				if debug: print(f"    Skipping bin {bin_name}. NaN or zero weight {weight}.")
-				continue
-
-			term = (diff ** 2) / err ** 2
-			if not np.isfinite(term):
-				if debug: print(f"    Skipping bin {bin_name}. Non-finite term encountered.")
-				continue
-			if weighted:
-				chi2_sum += (weight ** 2) * term
-				# ndf_sum  += weight ** 2
-				ndf_sum  += 1.0
-			else:
-				chi2_sum += term
-				ndf_sum  += 1.0
-
+		chi2_sum, ndf_sum = chi2_terms(bins, weighted=weighted, valid_bins=valid_bins, debug=debug)
 		chi2_dict[obs] = (chi2_sum, ndf_sum)
-		if debug: print(f"  Results for observable {obs}: chi2: {chi2_dict[obs][0]}, ndf: {chi2_dict[obs][1]}.")
+		if debug: print(f"  Results for observable {obs}: chi2: {chi2_sum}, ndf: {ndf_sum}.")
 	return chi2_dict
 
 
@@ -499,9 +465,7 @@ def analyses_chi2(obs_chi2s, debug=False):
 			analysis = obs_name.split("/")[1].split(":")[0]
 		except (IndexError, AttributeError):
 			analysis = "unknown"
-		if analysis not in chi2_dict:
-			chi2_dict[analysis] = (0.0, 0.0)
-		previous_chi2, previous_ndf = chi2_dict[analysis]
+		previous_chi2, previous_ndf = chi2_dict.get(analysis, (0.0, 0.0))
 		chi2_dict[analysis] = (previous_chi2 + chi2, previous_ndf + ndf)
 	if debug: print(f"  Results for analyses breakdown: {chi2_dict}.")
 	return chi2_dict
@@ -511,8 +475,6 @@ def process_envelope(args, loader, weights_dict, analyses_set=None):
 	"""Process envelope files and return valid bins."""
 
 	up_file, dn_file = args.envelope
-	loader.error_counts["Envelope"] = {}
-
 	if not Path(up_file).exists():
 		print(f"Error: Envelope up file '{up_file}' does not exist!")
 		return None
@@ -526,96 +488,69 @@ def process_envelope(args, loader, weights_dict, analyses_set=None):
 		return None
 
 
-def process_single_file(args, loader, yoda_file, label, 
-						weights_dict=None, weighted=False, valid_bins=None, analyses_set=None):
-	"""Process a single YODA file and compute chi2 summary and per-observable chi2s."""
+def build_summary(source, label, obs_dict, weighted, valid_bins, show_analyses, debug):
+	"""Compute (summary_dict, obs_data_list) for a single (source, label, obs_dict) group."""
 
-	obs_dict = loader.get_bin_differences(str(yoda_file), weights_dict=weights_dict,
-		analyses_set=analyses_set, pattern=None, debug=args.debug)
-
-	chi2, ndf = global_chi2(obs_dict,
-		weighted=weighted, valid_bins=valid_bins, debug=args.debug)
+	chi2, ndf = global_chi2(obs_dict, weighted=weighted, valid_bins=valid_bins, debug=debug)
 	reduced_chi2 = (chi2 / ndf) if ndf > 0 else np.nan
 
-	obs_chi2s = obs_chi2( obs_dict,
-		weighted=weighted, valid_bins=valid_bins, debug=args.debug)
-	valid_obs = [chi2/ndf for chi2, ndf in obs_chi2s.values() if ndf > 0 and np.isfinite(chi2)]
+	obs_chi2s = obs_chi2(obs_dict, weighted=weighted, valid_bins=valid_bins, debug=debug)
+	valid_obs = [c / n for c, n in obs_chi2s.values() if n > 0 and np.isfinite(c)]
 	average_chi2 = np.mean(valid_obs) if valid_obs else np.nan
 
-	analyses_chi2s = {}
-	if "analyses" in set(args.table_output):
-		analyses_chi2s = analyses_chi2(obs_chi2s, debug=args.debug)
+	analyses_chi2s = analyses_chi2(obs_chi2s, debug=debug) if show_analyses else {}
 
 	summary = {
-		"source"       : str(yoda_file),
+		"source"       : str(source),
 		"label"        : str(label),
 		"global_chi2"  : float(chi2),
 		"ndf"          : float(ndf),
 		"reduced_chi2" : float(reduced_chi2),
 		"average_chi2" : float(average_chi2),
-		"analysis_chi2": analyses_chi2s
+		"analysis_chi2": analyses_chi2s,
 	}
-
 	obs_data = []
-	for obs_name, (chi2, ndf) in sorted(obs_chi2s.items()):
-		if ndf > 0 and np.isfinite(chi2):
-			obs_data.append((str(yoda_file), str(label), str(obs_name), chi2, ndf))
+	for obs_name, (c, n) in sorted(obs_chi2s.items()):
+		if n > 0 and np.isfinite(c):
+			obs_data.append((str(source), str(label), str(obs_name), c, n))
 	return summary, obs_data
 
 
-def process_single_file_with_pattern(args, loader, yoda_file, label, 
-									 weights_dict=None, weighted=False, valid_bins=None, analyses_set=None, pattern=None):
-	"""Process a single YODA file and return all tag-specific summaries."""
+def process_single_file(args, loader, yoda_file, label,
+						weights_dict=None, weighted=False, valid_bins=None,
+						analyses_set=None, pattern=None, show_analyses=False):
+	"""Process a single YODA file. Returns (list_of_summaries, list_of_obs_data).
+
+	Without --pattern: produces one summary. With --pattern: produces one summary per matched tag.
+	"""
 
 	obs_dict_all = loader.get_bin_differences(str(yoda_file),
 		weights_dict=weights_dict, analyses_set=analyses_set, pattern=pattern, debug=args.debug)
+
+	if pattern is None:
+		summary, obs_data = build_summary(yoda_file, label, obs_dict_all,
+			weighted=weighted, valid_bins=valid_bins, show_analyses=show_analyses, debug=args.debug)
+		return [summary], obs_data
 
 	grouped_by_tag = {}
 	for obs_name, bins in obs_dict_all.items():
 		_, tag = split_variation_tag(obs_name)
 		if tag is None:
 			continue
-		if tag not in grouped_by_tag:
-			grouped_by_tag[tag] = {}
-		grouped_by_tag[tag][obs_name] = bins
+		grouped_by_tag.setdefault(tag, {})[obs_name] = bins
 
 	if not grouped_by_tag:
-		print(f"\nWarning: No observable tags matching --pattern '{args.pattern}' found in {yoda_file}, skipping.")
+		print(f"\nWarning: No observable tags matching --pattern '{pattern}' found in {yoda_file}, skipping.")
 		return [], []
 
-	file_summaries = []
-	file_obs_stats = []
+	summaries = []
+	obs_data_all = []
 	for tag in sorted(grouped_by_tag.keys(), key=tag_sort_key):
-		label_tagged  = f"{label}[{tag}]"
-		source_tagged = f"{yoda_file}[{tag}]"
-
-		chi2, ndf = global_chi2(grouped_by_tag[tag],
-			weighted=weighted, valid_bins=valid_bins, debug=args.debug)
-		reduced_chi2 = (chi2 / ndf) if ndf > 0 else np.nan
-
-		obs_chi2s = obs_chi2(grouped_by_tag[tag],
-			weighted=weighted, valid_bins=valid_bins, debug=args.debug)
-		valid_obs = [chi2/ndf for chi2, ndf in obs_chi2s.values() if ndf > 0 and np.isfinite(chi2)]
-		average_chi2 = np.mean(valid_obs) if valid_obs else np.nan
-
-		analyses_chi2s = {}
-		if "analyses" in set(args.table_output):
-			analyses_chi2s = analyses_chi2(obs_chi2s, debug=args.debug)
-
-		file_summaries.append({
-			"source"       : str(source_tagged),
-			"label"        : str(label_tagged),
-			"global_chi2"  : float(chi2),
-			"ndf"          : float(ndf),
-			"reduced_chi2" : float(reduced_chi2),
-			"average_chi2" : float(average_chi2),
-			"analysis_chi2": analyses_chi2s
-		})
-
-		for obs_name, (chi2_obs, ndf_obs) in sorted(obs_chi2s.items()):
-			if ndf_obs > 0 and np.isfinite(chi2_obs):
-				file_obs_stats.append((str(source_tagged), str(label_tagged), str(obs_name), chi2_obs, ndf_obs))
-	return file_summaries, file_obs_stats
+		summary, obs_data = build_summary(f"{yoda_file}[{tag}]", f"{label}[{tag}]", grouped_by_tag[tag],
+			weighted=weighted, valid_bins=valid_bins, show_analyses=show_analyses, debug=args.debug)
+		summaries.append(summary)
+		obs_data_all.extend(obs_data)
+	return summaries, obs_data_all
 
 
 def collect_yoda_files(yoda_inputs, tags=None, labels=None, depth=0):
@@ -648,7 +583,7 @@ def collect_yoda_files(yoda_inputs, tags=None, labels=None, depth=0):
 		if name.endswith(".yoda"):
 			return name[:-len(".yoda")]
 		return Path(path).stem
-	
+
 	def assign_label(file_path, input_index, matched_tags, label_mode):
 		if label_mode == "tag":
 			if len(matched_tags) > 1:
@@ -730,9 +665,9 @@ def print_table(summaries, show_analyses=False, show_sources=False):
 						""
 					]
 				)
-	
-	print(tabulate(table, 
-				headers=["Label" if not show_sources else "Source", "Global chi2", "ndf", "Reduced chi2", "Average chi2"], 
+
+	print(tabulate(table,
+				headers=["Label" if not show_sources else "Source", "Global chi2", "ndf", "Reduced chi2", "Average chi2"],
 				tablefmt="simple_outline", floatfmt=".3f", numalign="decimal"))
 	print()
 	finite_red = [s for s in summaries if np.isfinite(s["reduced_chi2"])]
@@ -823,7 +758,7 @@ def main():
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		epilog="""
 Examples:
-  compute_chi2.py "file1.yoda" --CLI-output analyses 
+  compute_chi2.py "file1.yoda" --CLI-output analyses
   compute_chi2.py results/ --depth 1
   compute_chi2.py results/ --tags tag1 tag2 --labels label1 label2
   compute_chi2.py results/ --envelope up.yoda dn.yoda --weights weights.txt --weighted
@@ -841,11 +776,11 @@ Labels and tags:
 	- Labels are assigned based on tag match (len(labels) must match len(tags))
   - Without --tags, labels map by input argument (len(labels) must match len(yoda_files args))
   - If counts do not match, file stems are used as labels
-		
+
 Output:
   - Results are printed in a table format to the console
-  - Chi2 details are written to a JSON file (default: chi2.json) with summaries and per-observable stats	
-  - Additional output options are available using --table-output (analyses, sources) and --error-summary	
+  - Chi2 details are written to a JSON file (default: chi2.json) with summaries and per-observable stats
+  - Additional output options are available using --table-output (analyses, sources) and --error-summary
 		"""
 	)
 	parser.add_argument("yoda_files", nargs="+", help="YODA files or directories containing YODA files")
@@ -863,6 +798,10 @@ Output:
 	parser.add_argument("-v" , "--debug", action="store_true", default=False, help="Enable debug output")
 	args = parser.parse_args()
 	command = " ".join(os.sys.argv)
+
+	table_output_set = set(args.table_output)
+	show_analyses = "analyses" in table_output_set
+	show_sources  = "sources"  in table_output_set
 
 	"""Initialize YODA loader and read weights/analyses files if provided"""
 	try:
@@ -882,7 +821,7 @@ Output:
 
 
 	"""Collect YODA files to process, applying tags and assigning labels"""
-	yoda_files, labels = collect_yoda_files(args.yoda_files, 
+	yoda_files, labels = collect_yoda_files(args.yoda_files,
 										 tags=args.tags, labels=args.labels, depth=args.depth)
 	if not yoda_files:
 		print("No YODA files found.")
@@ -902,25 +841,18 @@ Output:
 	total_files = len(yoda_files)
 	for idx, (yoda_file, label) in enumerate(zip(yoda_files, labels), start=1):
 		print(f"\rProcessing {idx}/{total_files} files...", end='', flush=True)
-		if args.pattern:
-			tags_summaries, tags_obs_data = process_single_file_with_pattern(args, loader, yoda_file, label,
-				weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins, analyses_set=analyses, pattern=args.pattern)
-			summaries.extend(tags_summaries)
-			obs_stats.extend(tags_obs_data)
-		else:
-			summary, obs_data = process_single_file(args, loader, yoda_file, label,
-				weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins, analyses_set=analyses)
-			summaries.append(summary)
-			obs_stats.extend(obs_data)
+		file_summaries, file_obs_data = process_single_file(args, loader, yoda_file, label,
+			weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins,
+			analyses_set=analyses, pattern=args.pattern, show_analyses=show_analyses)
+		summaries.extend(file_summaries)
+		obs_stats.extend(file_obs_data)
 		print('\r' + ' ' * 50 + '\r', end='', flush=True)
 	if not summaries:
 		print("No matching observables/files found to compute chi2.")
 		return 1
 
 	"""Print results table and write JSON output"""
-	print_table(summaries, 
-			 show_analyses=("analyses" in set(args.table_output)), 
-			 show_sources =("sources"  in set(args.table_output)))
+	print_table(summaries, show_analyses=show_analyses, show_sources=show_sources)
 	if args.error_summary: print_error_summary(loader)
 	outpath = Path(args.output)
 	if outpath.exists():
@@ -934,11 +866,11 @@ Output:
 			print(f"  Removed existing output file: {outpath}.\n")
 		else:
 			print(f"Error: Output path exists and is not a file: {outpath}. "
-		 		  f"Please remove or specify a different output path.")
+				  f"Please remove or specify a different output path.")
 			return 1
 	write_chi2_json(args.output, summaries, obs_stats, command)
 	return 0
 
 
 if __name__ == "__main__":
-    main()
+	main()

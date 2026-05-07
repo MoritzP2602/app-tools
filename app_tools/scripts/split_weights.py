@@ -36,7 +36,7 @@ def split_weight_file(input_path, n, out_dir=None):
         start = end
 
     out_paths = []
-    num_digits = len(str(n - 1))
+    num_digits = max(2, len(str(n - 1)))
     for i, chunk in enumerate(chunks):
         out_path = os.path.join(out_dir, f"{i:0{num_digits}d}")
         with open(out_path, "w") as f:
