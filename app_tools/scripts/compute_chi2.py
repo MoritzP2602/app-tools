@@ -120,13 +120,18 @@ class YodaLoader:
 		self.error_counts = defaultdict(lambda: defaultdict(int))
 
 	def load(self, analysis_name):
-		if analysis_name in self.yodas:
-			return self.yodas[analysis_name]
+		try:
+			base_name = str(analysis_name).split(":")[0]
+		except Exception:
+			base_name = analysis_name
+
+		if base_name in self.yodas:
+			return self.yodas[base_name]
 
 		ref_yoda = None
 		for base_path in self.paths:
-			gz_path = f"{base_path}/{analysis_name}.yoda.gz"
-			yoda_path = f"{base_path}/{analysis_name}.yoda"
+			gz_path = f"{base_path}/{base_name}.yoda.gz"
+			yoda_path = f"{base_path}/{base_name}.yoda"
 			if os.path.exists(gz_path):
 				ref_yoda = yoda.readYODA(gz_path)
 				break
@@ -136,9 +141,9 @@ class YodaLoader:
 
 		if ref_yoda is None:
 			raise FileNotFoundError(
-				f"Reference YODA for {analysis_name} not found")
+				f"Reference YODA for {base_name} not found")
 
-		self.yodas[analysis_name] = ref_yoda
+		self.yodas[base_name] = ref_yoda
 		return ref_yoda
 
 	def get_variation_tags(self, yoda_file, pattern, analyses_set=None):
@@ -287,7 +292,11 @@ class YodaLoader:
 
 			for bin_name, (data_val, data_err) in bin_dict.items():
 				bare_bin_name = strip_variation_tag(bin_name)
-				bin_name_ref = f"/REF" + bare_bin_name if not bare_bin_name.startswith("/REF") else bare_bin_name
+				try:
+					obs_suffix = bare_bin_name.split("/")[-1]
+				except Exception:
+					obs_suffix = bare_bin_name
+				bin_name_ref = f"/REF/{analysis_name}/{obs_suffix}"
 				if bin_name_ref not in bin_dict_ref:
 					if debug: print(f"    Skipping bin {bin_name}. Not found in reference for {obs_name}.")
 					skips["Bin not found in reference data"] += 1
@@ -371,7 +380,11 @@ class YodaLoader:
 					continue
 
 				for bin_name in bin_dict_up.keys():
-					bin_name_ref = f"/REF" + bin_name if not bin_name.startswith("/REF") else bin_name
+					try:
+						obs_suffix = bin_name.split("/")[-1]
+					except Exception:
+						obs_suffix = bin_name
+					bin_name_ref = f"/REF/{analysis_name}/{obs_suffix}"
 					if bin_name not in bin_dict_dn or bin_name_ref not in bin_dict_ref:
 						if debug: print(f"    Skipping bin {bin_name}. Not found in all datasets for {obs_name}.")
 						skips["Bin not found in all datasets"] += 1
