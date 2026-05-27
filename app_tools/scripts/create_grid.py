@@ -708,6 +708,10 @@ class ParameterGrid:
         return internal_by_param
 
     def create_pairwise_plots(self, outdir, fmt="pdf", dpi=150):
+        names = self.parameter_names()
+        if len(names) < 2:
+            print("Warning: Pairwise plots require at least 2 parameters; plotting is disabled.")
+            return False
         try:
             import matplotlib as mpl
             import matplotlib.pyplot as plt
@@ -730,10 +734,6 @@ class ParameterGrid:
 
         except ImportError as exc:
             fail(f"matplotlib is required for plot mode: {exc}")
-
-        names = self.parameter_names()
-        if len(names) < 2:
-            fail("plot mode requires at least 2 parameters")
 
         os.makedirs(outdir, exist_ok=True)
         internal_bounds = self.collect_sector_internal_boundaries()
@@ -761,7 +761,7 @@ class ParameterGrid:
             fpath = os.path.join(outdir, fname)
             fig.savefig(fpath, dpi=dpi)
             plt.close(fig)
-        return
+        return True
 
 
 def load_template(path):
@@ -1165,7 +1165,8 @@ def main():
             wrote_table = True
         if args.plots:
             plots_dir = sidecar_path(args.outdir, ".grid.plots")
-            grid.create_pairwise_plots(plots_dir)
+            if not grid.create_pairwise_plots(plots_dir):
+                plots_dir = None
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, 
                                    args.outdir.rstrip("/") + ".rew", precision=args.precision)
@@ -1197,7 +1198,8 @@ def main():
             wrote_table = True
         if args.plots:
             plots_dir = sidecar_path(args.outdir, ".grid.plots")
-            grid.create_pairwise_plots(plots_dir)
+            if not grid.create_pairwise_plots(plots_dir):
+                plots_dir = None
         if args.nominal:
             grid.write_reweighting(args.nominal, template_name, template_content, 
                                    args.outdir.rstrip("/") + ".rew", precision=args.precision)
@@ -1241,11 +1243,12 @@ def main():
         outdir = args.outdir if args.outdir else plot_sidecar_path(args.table, ".grid.plots")
         confirm_overwrite(outdir, skip_confirmation=args.overwrite)
         grid = ParameterGrid.from_table(args.table)
-        grid.create_pairwise_plots(outdir, fmt=args.format, dpi=args.dpi)
+        wrote_plots = grid.create_pairwise_plots(outdir, fmt=args.format, dpi=args.dpi)
         print_non_sampling_summary(command="plot", source_msg=f"table-file: {args.table}")
-        outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
-        print("Created outputs:")
-        print(f"  - {outdir_clean}/")
+        if wrote_plots:
+            outdir_clean = outdir[:-1] if outdir.endswith('/') else outdir
+            print("Created outputs:")
+            print(f"  - {outdir_clean}/")
         return
 
 
