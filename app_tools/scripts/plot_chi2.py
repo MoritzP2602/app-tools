@@ -204,11 +204,7 @@ def assign_superscripts_per_analysis(data_dict, series_ids):
 
 def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels,
                                    data_dict, series_labels_html, default_label=None):
-    """Build an HTML table showing per-analysis chi2 statistics.
-    
-    Columns: Label, Source, Reduced χ², Average χ²
-    One row per observable in the analysis.
-    """
+    """Build an HTML table showing per-analysis chi2 statistics."""
     def output_value(value):
         if value is None or not np.isfinite(value):
             return "nan"
@@ -221,20 +217,20 @@ def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels
     analysis_series_ids = [sid for sid in series_ids if sid in analysis_data]
     if not analysis_series_ids:
         return ""
-    
+
     analysis_label_map = per_analysis_labels.get(analysis_name, {})
-    
-    table_html = """        <table>
-            <tr><th>Source</th><th>Label</th><th>Reduced χ²</th><th>Average χ²</th></tr>"""
-    
+
+    table_html = r"""        <table>
+            <tr><th>Source</th><th>Label</th><th>Global $\chi^2$</th><th>ndf</th><th>Reduced $\chi^2$</th><th>Averaged $\chi^2$ over all obs.</th></tr>"""
+
     for sid in analysis_series_ids:
         label_text = analysis_label_map.get(sid, sid[0])
         source = sid[1]
         bin_tuples = analysis_data[sid]
-        
+
         if not bin_tuples:
             continue
-        
+
         chi2_list = []
         ndf_list = []
         reduced_chi2_list = []
@@ -243,27 +239,29 @@ def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels
                 chi2_list.append(chi2)
                 ndf_list.append(ndf)
             reduced_chi2_list.append(reduced_chi2)
-        
+
         if not chi2_list:
             continue
-        
+
         chi2_sum_obs = sum(chi2_list)
         total_ndf_obs = sum(ndf_list)
         reduced_chi2_obs = chi2_sum_obs / total_ndf_obs if total_ndf_obs > 0 else np.nan
 
         avg_chi2 = sum(reduced_chi2_list) / len(reduced_chi2_list)
-        
+
         table_html += f"""
             <tr>
                 <td>{source}</td>
                 <td>{label_text}</td>
+                <td>{output_value(chi2_sum_obs)}</td>
+                <td>{format_value(total_ndf_obs)}</td>
                 <td>{output_value(reduced_chi2_obs)}</td>
                 <td>{output_value(avg_chi2)}</td>
             </tr>"""
-    
+
     table_html += """
         </table>"""
-    
+
     return table_html
 
 
@@ -797,10 +795,10 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
         <pre>{source_command}</pre></p>""")
 
     if summaries:
-        parts.append("""
+        parts.append(r"""
         <h3>Summary</h3>
         <table>
-            <tr><th>Source</th><th>Label</th><th>Global $\\chi^2$</th><th>ndf</th><th>Reduced $\\chi^2$</th><th>Averaged $\\chi^2$ over all obs.</th></tr>""")
+            <tr><th>Source</th><th>Label</th><th>Global $\chi^2$</th><th>ndf</th><th>Reduced $\chi^2$</th><th>Averaged $\chi^2$ over all obs.</th></tr>""")
         for summary in summaries:
             parts.append(f"""
             <tr>
@@ -813,6 +811,13 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
             </tr>""")
         parts.append("""
         </table>""")
+        parts.append(r"""
+        <p style="margin-left: 1.5em; max-width: 60em; font-size: 0.95em;">
+            <strong>Reduced $\chi^2$:</strong> total $\chi^2$ over all bins divided by the total number of bins,
+            $\chi^2_{\mathrm{red}} = \dfrac{\sum_{o\in\mathrm{obs}} \chi^2_o}{\sum_{o\in\mathrm{obs}}\mathrm{ndf}_o}$.<br>
+            <strong>Averaged $\chi^2$:</strong> mean of the per-observable reduced $\chi^2$ values,
+            $\chi^2_{\mathrm{avg}} = \dfrac{1}{N_{\mathrm{obs}}}\sum_{o\in\mathrm{obs}} \dfrac{\chi^2_o}{\mathrm{ndf}_o}$.
+        </p>""")
 
     per_analysis_labels_html = per_analysis_labels or {}
     for group, files in sorted(exp_analysis_groups.items()):
