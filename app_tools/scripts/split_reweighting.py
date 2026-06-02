@@ -88,7 +88,7 @@ def find_yoda_files(directory):
     return sorted(yoda_files, key=lambda path: path.name)
 
 
-def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, equal_variations=False):
+def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, equal_variations=False, quiet=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     
@@ -106,11 +106,11 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
         if variation_params_map:
             print(f"Loaded variation parameters from {variations_file}:")
             for param_name, values in variation_params_map.items():
-                print(f"  {param_name}: {values}")
                 if n_expected_variations is None:
                     n_expected_variations = len(values)
                 elif n_expected_variations != len(values):
-                    print(f"Error: All parameters in variations file must have the same number of values!")
+                    print(f"Error: All parameters in variations file must have the same number of values! "
+                          f"Parameter '{param_name}' has {len(values)} values, expected {n_expected_variations}.")
                     sys.exit(1)
     
     if input_path.is_file():
@@ -263,18 +263,20 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
             else:
                 source_str = f"{yoda_file.name}:v{var_num}"
 
-            if variation_params_map:
-                point_values = []
-                for param_name in variation_params_map.keys():
-                    param_values = variation_params_map[param_name]
-                    if params_idx < len(param_values):
-                        point_values.append(param_values[params_idx])
-                point_str = ", ".join(f"{v:.6g}" for v in point_values)
-                print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables "
-                      f"from variation v{var_num} (point: [{point_str}], source: {source_str})")
-            else:
-                print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables "
-                      f"from variation v{var_num} (source: {source_str})")
+            if not quiet:
+                if variation_params_map:
+                    point_values = []
+                    for param_name in variation_params_map.keys():
+                        param_values = variation_params_map[param_name]
+                        if params_idx < len(param_values):
+                            point_values.append(param_values[params_idx])
+                    point_str = ", ".join(f"{v:.6g}" for v in point_values)
+                    print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables "
+                          f"from variation v{var_num} (point: [{point_str}], source: {source_str})")
+                else:
+                    print(f"  Created {new_subdir_name}/{new_yoda_name} with {len(yd)} observables "
+                          f"from variation v{var_num} (source: {source_str})")
+                    
         if not equal_variations:
             param_offset += len(var_numbers)
 
@@ -312,6 +314,7 @@ corresponding variation parameter values.
     parser.add_argument('-v', '--variations', type=str, default=None, help='Path to variations.dat file containing parameter variations')
     parser.add_argument('--equal-variations', action='store_true', help='Assume each input YODA file has the same variation list and start variations.dat indexing from 0 for each file')
     parser.add_argument('--overwrite', action='store_true', help='Skip overwrite confirmation if output directory exists')
+    parser.add_argument('-q', '--quiet', action='store_true', help='Suppress progress output')
     args = parser.parse_args()
     
     if not os.path.exists(args.input):
@@ -339,7 +342,7 @@ corresponding variation parameter values.
         else:
             os.remove(args.outdir)
     
-    split_yodas(args.input, args.pattern, args.outdir, args.variations, args.equal_variations)
+    split_yodas(args.input, args.pattern, args.outdir, args.variations, args.equal_variations, args.quiet)
     return 0
 
 
