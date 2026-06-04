@@ -9,7 +9,6 @@ import sys
 import re
 import shutil
 import datetime
-import itertools
 from pathlib import Path
 from matplotlib import font_manager as fm
 
@@ -539,186 +538,6 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
     return
 
 
-def read_grid_table(path):
-    """Read grid table file. Returns (points, parameter_names)."""
-    points = []
-    header = None
-    with open(path, "r") as f:
-        for raw in f:
-            line = raw.strip()
-            if not line:
-                continue
-            if line.startswith("#"):
-                maybe_header = line[1:].strip().split()
-                if header is None and maybe_header and maybe_header[0].lower() == "index":
-                    header = maybe_header
-                continue
-            cols = line.split()
-            if header is None:
-                header = cols
-                continue
-            if len(cols) != len(header):
-                raise ValueError(f"Malformed grid row in '{path}': {raw.rstrip()}")
-            row = dict(zip(header, cols))
-            point_index = ""
-            values = {}
-            for k, v in row.items():
-                lk = k.lower()
-                if lk == "index":
-                    point_index = v
-                    continue
-                if lk == "sector":
-                    continue
-                values[k] = float(v)
-            points.append({"index": point_index, "values": values})
-    if not points:
-        raise ValueError(f"No valid parameter rows found in '{path}'.")
-    parameter_names = list(points[0]["values"].keys())
-    if len(parameter_names) < 2:
-        raise ValueError("Grid plot requires at least 2 parameters in the grid file.")
-    return points, parameter_names
-
-
-def chi2_from_summaries(summaries):
-    """Build reduced_chi2 map from CHI2JSON summaries."""
-    if not summaries:
-        raise ValueError("No summaries found in chi2.json")
-    chi2_by_label = {}
-    for summary in summaries:
-        label = str(summary.get("label", "")).strip()
-        if not label:
-            raise ValueError("Found summary entry without label in chi2.json")
-        if label in chi2_by_label:
-            raise ValueError(f"Duplicate summary label '{label}' found in chi2.json")
-        reduced = summary.get("reduced_chi2", None)
-        if reduced is None:
-            chi2 = to_float_or_nan(summary.get("global_chi2"))
-            ndf = to_float_or_nan(summary.get("ndf"))
-            reduced = chi2 / ndf if np.isfinite(chi2) and np.isfinite(ndf) and ndf > 0 else np.nan
-        chi2_by_label[label] = to_float_or_nan(reduced)
-    return chi2_by_label
-
-
-def plot_chi2_grid(grid_path, chi2_json_path, fmt="pdf", dpi=150):
-    """Render one chi2/ndf grid plot per parameter pair."""
-    points, parameter_names = read_grid_table(grid_path)
-    summaries, _, _, _, _   = read_chi2_json(chi2_json_path)
-    chi2_by_label = chi2_from_summaries(summaries)
-
-    grid_indices   = [str(p["index"]) for p in points]
-    grid_index_set = set(grid_indices)
-    chi2_label_set = set(chi2_by_label.keys())
-
-    if len(grid_indices) != len(chi2_by_label):
-        raise ValueError(f"Grid/chi2 size mismatch: grid has {len(grid_indices)} points, "
-                         f"chi2.json has {len(chi2_by_label)} summaries")
-
-    missing_in_chi2 = sorted(grid_index_set - chi2_label_set)
-    extra_in_chi2   = sorted(chi2_label_set - grid_index_set)
-    if missing_in_chi2 or extra_in_chi2:
-        msg = []
-        if missing_in_chi2:
-            msg.append(f"missing in chi2.json: {missing_in_chi2}")
-        if extra_in_chi2:
-            msg.append(f"missing in grid file: {extra_in_chi2}")
-        raise ValueError("Label mismatch between grid file and chi2.json (" + "; ".join(msg) + ").")
-
-    param_values = {}
-    for point in points:
-        for name, value in point["values"].items():
-            param_values.setdefault(name, set()).add(float(value))
-
-    grid_name = Path(grid_path).name
-    if grid_name.endswith(".grid.dat"):
-        stem = grid_name[:-len(".grid.dat")]
-    elif grid_name.endswith(".dat"):
-        stem = grid_name[:-len(".dat")]
-    else:
-        stem = Path(grid_path).stem
-    outdir  = str(Path(grid_path).with_name(f"{stem}.chi2.plots"))
-    outpath = Path(outdir)
-    if outpath.exists():
-        raise ValueError(f"Output path already exists: {outpath}.")
-    os.makedirs(outdir)
-
-    try:
-        import matplotlib.tri as mtri
-    except ImportError as e:
-        raise ValueError(f"matplotlib.tri is required for grid interpolation: {e}.")
-
-    pairs = list(itertools.combinations(parameter_names, 2))
-    for xname, yname in pairs:
-        xv = [float(p["values"][xname]) for p in points]
-        yv = [float(p["values"][yname]) for p in points]
-        cv = [to_float_or_nan(chi2_by_label[str(p["index"])]) for p in points]
-        finite_mask = np.isfinite(cv)
-        xv = [x for x, keep in zip(xv, finite_mask) if keep]
-        yv = [y for y, keep in zip(yv, finite_mask) if keep]
-        cv = [c for c, keep in zip(cv, finite_mask) if keep]
-        if not cv:
-            raise ValueError(f"Grid for pair ({xname}, {yname}) contains no finite chi2/ndf values.")
-        if np.any(np.asarray(cv, dtype=float) <= 0):
-            raise ValueError(f"Grid for pair ({xname}, {yname}) contains non-positive chi2/ndf values. "
-                             f"Log10 color scale requires strictly positive values.")
-
-        z_pos = np.asarray([val for val in cv if np.isfinite(val) and val > 0], dtype=float)
-        vmin  = float(np.min(z_pos))
-        vmax  = float(np.max(z_pos))
-        if np.isclose(vmin, vmax):
-            vmin = max(vmin * 0.9, 1e-12)
-            vmax = vmax * 1.1
-        color_norm = mpl.colors.LogNorm(vmin=vmin, vmax=vmax)
-
-        fig, ax = plt.subplots(figsize=(6.0, 6.0))
-        triangulation = mtri.Triangulation(xv, yv)
-        mesh = ax.tripcolor(triangulation, cv, cmap="viridis_r", norm=color_norm, shading="gouraud")
-        ax.scatter(xv, yv, s=16, c="white", edgecolors="black", linewidths=0.4, zorder=3)
-
-        ax.set_box_aspect(1)
-        ax.set_xlabel(xname, fontsize=14)
-        ax.set_ylabel(yname, fontsize=14)
-        ax.tick_params(axis='both', which='major', labelsize=12, length=5)
-        cbar = fig.colorbar(mesh, ax=ax)
-        cbar.set_label(r"$\chi^2 / \mathrm{ndf}$", fontsize=14)
-        cbar.formatter = mticker.FuncFormatter(lambda val, _: f"{val:g}")
-        cbar.update_ticks()
-        x_values = sorted(param_values.get(xname, []))
-        y_values = sorted(param_values.get(yname, []))
-        if x_values:
-            x_margin = 0.05 * (max(x_values) - min(x_values) if len(x_values) > 1 else 1.0)
-            ax.set_xlim(min(x_values) - x_margin, max(x_values) + x_margin)
-        if y_values:
-            y_margin = 0.05 * (max(y_values) - min(y_values) if len(y_values) > 1 else 1.0)
-            ax.set_ylim(min(y_values) - y_margin, max(y_values) + y_margin)
-        fig.tight_layout()
-
-        fname = f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(xname))}__{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(yname))}.{fmt}"
-        fpath = os.path.join(outdir, fname)
-        fig.savefig(fpath, dpi=dpi)
-        plt.close(fig)
-        print(f"Created plot: {fpath}")
-    print()
-    return outdir
-
-
-def grid(args):
-    """Plot chi2 values on a grid (dispatcher for `grid` subcommand)."""
-    grid_path = Path(args.grid)
-    json_path = Path(args.chi2_json)
-    if not grid_path.exists():
-        print(f"Error: grid file does not exist: {grid_path}.")
-        return 1
-    if not json_path.exists():
-        print(f"Error: input file does not exist: {json_path}.")
-        return 1
-    try:
-        plot_chi2_grid(str(grid_path), str(json_path), fmt="pdf", dpi=150)
-    except ValueError as e:
-        print(f"Error: {e}.")
-        return 1
-    return 0
-
-
 def format_value(value):
     """Format a numeric value for HTML display, returning 'nan' for missing/non-finite."""
     if value is None:
@@ -854,7 +673,7 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
 
 
 def build_parser():
-    """Build the top-level parser with `plot` (default) and `grid` subcommands."""
+    """Build the argument parser for per-analysis chi2 plots."""
     parser = argparse.ArgumentParser(
         description="Plot chi2 data from a JSON file and generate an HTML report.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -863,7 +682,6 @@ Examples:
   plot_chi2.py chi2.json --outdir output_directory
   plot_chi2.py chi2.json --default-label default_label --log
   plot_chi2.py chi2_file1.json chi2_file2.json --labels label1 label2
-  plot_chi2.py grid chi2.json --grid newscan.grid.dat
 
 Input handling:
   - Reads results from compute_chi2.py in JSON format (CHI2JSON)
@@ -873,52 +691,23 @@ Input handling:
 Output:
   - Creates one plot per analysis (PDF + PNG) and an index.html summary
   - Output directory is overwritten if it already exists, can be specified with -o/--outdir
-
-Subcommands:
-  - (none) / plot:  default per-analysis plots from one or more chi2.json files
-  - grid:           plot chi2/ndf as a 2D grid for parameter scans (requires --grid GRID_FILE)
         """
     )
-    subparsers = parser.add_subparsers(dest='mode', required=True)
-
-    plot_p = subparsers.add_parser('plot', help='Per-analysis chi2 plots (default)',
-                                    formatter_class=argparse.RawDescriptionHelpFormatter)
-    plot_p.add_argument("chi2_json", nargs="+", help="Input chi2.json file(s) (from compute_chi2.py)")
-    plot_p.add_argument("-o", "--outdir", default="chi2-plots", help="Output directory for plots")
-    plot_p.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
-    plot_p.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
-    plot_p.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
-
-    grid_p = subparsers.add_parser('grid', help='Chi2/ndf grid plot for parameter scans')
-    grid_p.add_argument("chi2_json", help="Input chi2.json file (from compute_chi2.py)")
-    grid_p.add_argument("--grid", required=True, help="Grid table (.dat, e.g. newscan.grid.dat)")
+    parser.add_argument("chi2_json", nargs="+", help="Input chi2.json file(s) (from compute_chi2.py)")
+    parser.add_argument("-o", "--outdir", default="chi2-plots", help="Output directory for plots")
+    parser.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
+    parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
+    parser.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
 
     return parser
-
-
-def normalize_argv(argv):
-    """Inject the implicit subcommand for backward compatibility.
-
-    Maps legacy invocations (no subcommand) to either `grid` (when --grid is present)
-    or `plot` (otherwise), so old CLI calls keep working with subparsers.
-    """
-    if argv and argv[0] in ('plot', 'grid', '-h', '--help'):
-        return argv
-    if any(a == '--grid' or a.startswith('--grid=') for a in argv):
-        return ['grid'] + argv
-    return ['plot'] + argv
 
 
 def main():
     print("Starting chi2 plotting...\n")
 
     parser = build_parser()
-    argv = normalize_argv(sys.argv[1:])
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
     command = " ".join(sys.argv)
-
-    if args.mode == 'grid':
-        return grid(args)
 
     outpath = Path(args.outdir)
     if outpath.exists():
