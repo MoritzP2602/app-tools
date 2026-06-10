@@ -1,6 +1,7 @@
 
 import argparse
 import os
+import sys
 import yoda
 import rivet
 
@@ -65,7 +66,7 @@ Warnings are printed for observables that cannot be found in Rivet references.
         yd = yoda.readYODA(args.yoda_file)
     except Exception as e:
         print(f"Error: Could not read YODA file {args.yoda_file}: {e}!")
-        return
+        sys.exit(1)
     
     observables = []
     ignored_count = 0

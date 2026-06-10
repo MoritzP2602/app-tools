@@ -20,7 +20,11 @@ def merge_jsons_in_dir(json_dir, keep_dir=False, out_file=None):
     merged = {}
     for fname in files:
         with open(os.path.join(json_dir, fname)) as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"Error: Could not parse {os.path.join(json_dir, fname)}: {e}!")
+                sys.exit(1)
             if isinstance(data, dict):
                 for k, v in data.items():
                     if k in merged:

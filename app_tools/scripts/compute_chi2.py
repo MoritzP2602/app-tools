@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 from tabulate import tabulate
@@ -818,7 +819,7 @@ Output:
 	parser.add_argument("--error-summary", action="store_true", default=False, help="Display error summary for each file")
 	parser.add_argument("-v" , "--debug", action="store_true", default=False, help="Enable debug output")
 	args = parser.parse_args()
-	command = " ".join(os.sys.argv)
+	command = " ".join(sys.argv)
 
 	table_output_set = set(args.table_output)
 	show_analyses = "analyses" in table_output_set
