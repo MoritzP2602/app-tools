@@ -5,8 +5,8 @@ import matplotlib.ticker as mticker
 import argparse
 import json
 import os
-import sys
 import re
+import sys
 import shutil
 import datetime
 from pathlib import Path
@@ -148,23 +148,6 @@ def merge_chi2_json_files(json_paths):
     return merged_summaries, merged_data_dict, merged_labels, merged_series_ids, source_commands
 
 
-def build_series_labels(series_ids):
-    """Build display labels for each series ID.
-    
-    Returns plain labels without superscripts. Superscripts are only applied
-    per-analysis in tables, not globally in plots.
-    """
-    series_labels      = {}
-    series_labels_html = {}
-    
-    for sid in series_ids:
-        label = sid[0]
-        series_labels[sid]      = label
-        series_labels_html[sid] = label
-    
-    return series_labels, series_labels_html
-
-
 def assign_superscripts_per_analysis(data_dict, series_ids):
     """Assign superscripts per analysis, not globally.
     
@@ -201,14 +184,8 @@ def assign_superscripts_per_analysis(data_dict, series_ids):
     return per_analysis_labels_html, per_analysis_labels_mpl
 
 
-def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels,
-                                   data_dict, series_labels_html, default_label=None):
+def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels, data_dict):
     """Build an HTML table showing per-analysis chi2 statistics."""
-    def output_value(value):
-        if value is None or not np.isfinite(value):
-            return "nan"
-        return f"{value:.2f}"
-
     analysis_data = data_dict.get(analysis_name, {})
     if not analysis_data:
         return ""
@@ -252,10 +229,10 @@ def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels
             <tr>
                 <td>{source}</td>
                 <td>{label_text}</td>
-                <td>{output_value(chi2_sum_obs)}</td>
+                <td>{format_value(chi2_sum_obs)}</td>
                 <td>{format_value(total_ndf_obs)}</td>
-                <td>{output_value(reduced_chi2_obs)}</td>
-                <td>{output_value(avg_chi2)}</td>
+                <td>{format_value(reduced_chi2_obs)}</td>
+                <td>{format_value(avg_chi2)}</td>
             </tr>"""
 
     table_html += """
@@ -264,7 +241,7 @@ def build_per_analysis_chi2_table(analysis_name, series_ids, per_analysis_labels
     return table_html
 
 
-def filter_labels(labels, series_ids, requested_labels=None):
+def filter_labels(labels, series_ids, requested_labels):
     """Filter labels select matching internal series IDs."""
 
     if requested_labels:
@@ -367,13 +344,8 @@ def compute_figure_layout(plot_series, has_ratio_plot, bin_ids_length):
 
 
 def plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin_ids,
-                         default_series_id, default_bin_data, series_labels, has_ratio_plot,
-                         per_analysis_labels=None, analysis_name=None):
-    """Draw all series on the main axis (and ratio axis if applicable)."""
-    analysis_label_map = {}
-    if per_analysis_labels and analysis_name:
-        analysis_label_map = per_analysis_labels.get(analysis_name, {})
-    
+                         default_series_id, default_bin_data, analysis_label_map):
+    """Draw all series on the main axis (and ratio axis if ax_ratio is given)."""
     plot_index = 0
     for sid in plot_series:
         bin_data = series_to_bin_data[sid]
@@ -386,7 +358,7 @@ def plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin
         valid_chi2 = [chi2_values[j] for j in valid_indices]
 
         is_default = bool(default_series_id and sid == default_series_id)
-        label      = analysis_label_map.get(sid, series_labels.get(sid, sid[0]))
+        label      = analysis_label_map.get(sid, sid[0])
         if is_default and 'default' not in label.lower():
             label = f'{label} (default)'
         style = series_style(is_default, plot_index)
@@ -398,7 +370,7 @@ def plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin
         ax.plot(valid_x, valid_chi2, linestyle='-', marker=None,
                 color=style['color'], linewidth=style['linewidth'], alpha=style['linealpha'])
 
-        if has_ratio_plot and not is_default:
+        if ax_ratio is not None and not is_default:
             default_values = [to_float_or_nan(default_bin_data.get(bid, np.nan)) for bid in chunk_bin_ids]
             ratio_values = []
             for num, den in zip(chi2_values, default_values):
@@ -417,8 +389,9 @@ def plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin
                               color=style['color'], linewidth=1.5, alpha=0.5)
 
 
-def configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, has_ratio_plot, ncols_legend):
+def configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, ncols_legend):
     """Apply tick formatting, legend, and ratio-axis styling."""
+    has_ratio_plot = ax_ratio is not None
     ax.minorticks_on()
     x_positions = np.arange(len(chunk_bin_ids))
     x_axis = ax_ratio if has_ratio_plot else ax
@@ -461,8 +434,8 @@ def configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, has_ratio_plot, ncols
                    length=3, top=True, right=True)
 
 
-def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=None,
-                           per_analysis_labels=None, log_scale=False, output_dir='chi2-plots'):
+def plot_chi2_per_analysis(data_dict, series_ids, per_analysis_labels, default_label,
+                           log_scale, output_dir):
     """Create one plot per analysis showing chi2/ndf for each observable."""
     os.makedirs(output_dir)
 
@@ -511,9 +484,9 @@ def plot_chi2_per_analysis(data_dict, series_ids, series_labels, default_label=N
             ax.set_yscale('log' if log_scale else 'linear')
 
             plot_series_on_axes(ax, ax_ratio, plot_series, series_to_bin_data, chunk_bin_ids,
-                                 default_series_id, default_bin_data, series_labels, has_ratio_plot,
-                                 per_analysis_labels=per_analysis_labels, analysis_name=analysis_name)
-            configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, has_ratio_plot, layout['ncols_legend'])
+                                 default_series_id, default_bin_data,
+                                 per_analysis_labels.get(analysis_name, {}))
+            configure_axes(ax, ax_ratio, chunk_bin_ids, log_scale, layout['ncols_legend'])
 
             if has_ratio_plot:
                 fig.align_ylabels([ax, ax_ratio])
@@ -569,16 +542,12 @@ def group_plot_files(plot_files):
     return groups
 
 
-def create_index_html(command, summaries=None, data_dict=None, series_ids=None, series_labels=None,
-                      default_label=None, per_analysis_labels=None, input_file=None, source_command=None, output_dir="chi2-plots"):
+def create_index_html(command, summaries, data_dict, series_ids, per_analysis_labels,
+                      input_file, source_command, output_dir):
     """Create an index.html file in the output directory to access all plot files."""
 
     plot_files = sorted(f for f in os.listdir(output_dir) if f.endswith((".pdf", ".png")))
     exp_analysis_groups = group_plot_files(plot_files)
-
-    series_ids             = series_ids             or []
-    series_labels          = series_labels          or {}
-    data_dict              = data_dict              or {}
 
     now = datetime.datetime.now().strftime("%A, %d. %B %Y %H:%M")
 
@@ -638,13 +607,11 @@ def create_index_html(command, summaries=None, data_dict=None, series_ids=None, 
             $\chi^2_{\mathrm{avg}} = \dfrac{1}{N_{\mathrm{obs}}}\sum_{o\in\mathrm{obs}} \dfrac{\chi^2_o}{\mathrm{ndf}_o}$.
         </p>""")
 
-    per_analysis_labels_html = per_analysis_labels or {}
     for group, files in sorted(exp_analysis_groups.items()):
         parts.append(f"""
         <h3>{group}</h3>""")
-        
-        table_html = build_per_analysis_chi2_table(group, series_ids, per_analysis_labels_html,
-                                                   data_dict, series_labels, default_label)
+
+        table_html = build_per_analysis_chi2_table(group, series_ids, per_analysis_labels, data_dict)
         if table_html:
             parts.append("\n" + table_html)
         
@@ -743,9 +710,6 @@ def main():
     if not series_ids:
         print("Error: selected labels do not map to any plot series.")
         return 1
-    series_labels, series_labels_html = build_series_labels(series_ids)
-    per_analysis_labels_html, per_analysis_labels_mpl = assign_superscripts_per_analysis(data_dict, series_ids)
-
     default_label = None
     if args.default_label:
         if args.default_label not in available_labels:
@@ -755,18 +719,18 @@ def main():
             default_label = args.default_label
             if default_label not in labels:
                 labels.insert(0, default_label)
+                series_ids = [sid for sid in available_series_ids if sid[0] in labels]
 
-    plot_chi2_per_analysis(data_dict, series_ids, series_labels,
+    per_analysis_labels_html, per_analysis_labels_mpl = assign_superscripts_per_analysis(data_dict, series_ids)
+
+    plot_chi2_per_analysis(data_dict, series_ids, per_analysis_labels_mpl,
                            default_label=default_label,
-                           per_analysis_labels=per_analysis_labels_mpl,
                            log_scale=args.log,
                            output_dir=args.outdir)
     create_index_html(command,
                       summaries=summaries,
                       data_dict=data_dict,
                       series_ids=series_ids,
-                      series_labels=series_labels_html,
-                      default_label=default_label,
                       per_analysis_labels=per_analysis_labels_html,
                       input_file=", ".join(str(p) for p in json_paths),
                       source_command="\n".join(source_commands),
@@ -775,4 +739,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

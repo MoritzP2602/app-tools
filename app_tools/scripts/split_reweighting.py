@@ -347,4 +347,4 @@ corresponding variation parameter values.
 
 
 if __name__ == '__main__':
-    exit(main())
+    sys.exit(main())

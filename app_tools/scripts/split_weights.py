@@ -1,6 +1,6 @@
 
-import sys
 import os
+import sys
 import argparse
 
 
@@ -96,4 +96,4 @@ Only observable-level weights are included.
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

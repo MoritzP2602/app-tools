@@ -4,6 +4,7 @@ import glob
 import math
 import os
 import re
+import sys
 
 
 def read_weights(path, scale):
@@ -139,4 +140,4 @@ Scaling example:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

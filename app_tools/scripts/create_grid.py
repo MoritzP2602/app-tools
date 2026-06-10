@@ -3,8 +3,8 @@ import numpy as np
 import argparse
 import json
 import os
-import sys
 import re
+import sys
 import glob
 import shutil
 import itertools
@@ -1253,4 +1253,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

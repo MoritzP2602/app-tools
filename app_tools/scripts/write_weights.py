@@ -125,4 +125,4 @@ Warnings are printed for observables that cannot be found in Rivet references.
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

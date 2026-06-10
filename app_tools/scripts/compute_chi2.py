@@ -147,22 +147,6 @@ class YodaLoader:
 		self.yodas[base_name] = ref_yoda
 		return ref_yoda
 
-	def get_variation_tags(self, yoda_file, pattern, analyses_set=None):
-		tags = set()
-		yd = yoda.readYODA(yoda_file)
-		for obs_name in yd.keys():
-			bare_obs_name, tag = split_variation_tag(obs_name)
-			if tag is None or pattern not in tag:
-				continue
-			try:
-				analysis_name = bare_obs_name.split("/")[1].split(":")[0]
-			except (IndexError, AttributeError):
-				continue
-			if analyses_set is not None and analysis_name not in analyses_set:
-				continue
-			tags.add(tag)
-		return sorted(tags, key=tag_sort_key)
-
 	def extract_bins_profile(self, obj):
 		if hasattr(obj, "path") and callable(obj.path):
 			path = obj.path()
@@ -491,10 +475,9 @@ def analyses_chi2(obs_chi2s, debug=False):
 	return chi2_dict
 
 
-def process_envelope(args, loader, weights_dict, analyses_set=None):
+def process_envelope(loader, up_file, dn_file, weights_dict=None, analyses_set=None, debug=False):
 	"""Process envelope files and return valid bins."""
 
-	up_file, dn_file = args.envelope
 	if not Path(up_file).exists():
 		print(f"Error: Envelope up file '{up_file}' does not exist!")
 		return None
@@ -502,13 +485,14 @@ def process_envelope(args, loader, weights_dict, analyses_set=None):
 		print(f"Error: Envelope down file '{dn_file}' does not exist!")
 		return None
 	try:
-		return loader.get_valid_bins(up_file, dn_file, weights_dict, analyses_set=analyses_set, debug=args.debug)
+		return loader.get_valid_bins(up_file, dn_file, weights_dict=weights_dict, 
+							   analyses_set=analyses_set, debug=debug)
 	except Exception as e:
 		print(f"Error processing envelope: {e}")
 		return None
 
 
-def build_summary(source, label, obs_dict, weighted, valid_bins, show_analyses, debug):
+def build_summary(source, label, obs_dict, weighted=False, valid_bins=None, show_analyses=False, debug=False):
 	"""Compute (summary_dict, obs_data_list) for a single (source, label, obs_dict) group."""
 
 	chi2, ndf = global_chi2(obs_dict, weighted=weighted, valid_bins=valid_bins, debug=debug)
@@ -536,20 +520,19 @@ def build_summary(source, label, obs_dict, weighted, valid_bins, show_analyses, 
 	return summary, obs_data
 
 
-def process_single_file(args, loader, yoda_file, label,
-						weights_dict=None, weighted=False, valid_bins=None,
-						analyses_set=None, pattern=None, show_analyses=False):
+def process_single_file(loader, yoda_file, label, weights_dict=None, weighted=False, valid_bins=None,
+						analyses_set=None, pattern=None, show_analyses=False, debug=False):
 	"""Process a single YODA file. Returns (list_of_summaries, list_of_obs_data).
 
 	Without --pattern: produces one summary. With --pattern: produces one summary per matched tag.
 	"""
 
 	obs_dict_all = loader.get_bin_differences(str(yoda_file),
-		weights_dict=weights_dict, analyses_set=analyses_set, pattern=pattern, debug=args.debug)
+		weights_dict=weights_dict, analyses_set=analyses_set, pattern=pattern, debug=debug)
 
 	if pattern is None:
 		summary, obs_data = build_summary(yoda_file, label, obs_dict_all,
-			weighted=weighted, valid_bins=valid_bins, show_analyses=show_analyses, debug=args.debug)
+			weighted=weighted, valid_bins=valid_bins, show_analyses=show_analyses, debug=debug)
 		return [summary], obs_data
 
 	grouped_by_tag = {}
@@ -567,7 +550,7 @@ def process_single_file(args, loader, yoda_file, label,
 	obs_data_all = []
 	for tag in sorted(grouped_by_tag.keys(), key=tag_sort_key):
 		summary, obs_data = build_summary(f"{yoda_file}[{tag}]", f"{label}[{tag}]", grouped_by_tag[tag],
-			weighted=weighted, valid_bins=valid_bins, show_analyses=show_analyses, debug=args.debug)
+			weighted=weighted, valid_bins=valid_bins, show_analyses=show_analyses, debug=debug)
 		summaries.append(summary)
 		obs_data_all.extend(obs_data)
 	return summaries, obs_data_all
@@ -852,7 +835,8 @@ Output:
 	"""If envelope option is used, determine valid bins once before processing files"""
 	valid_bins = None
 	if args.envelope:
-		valid_bins = process_envelope(args, loader, weights, analyses_set=analyses)
+		up_file, dn_file = args.envelope
+		valid_bins = process_envelope(loader, up_file, dn_file, weights, analyses, args.debug)
 		if valid_bins is None:
 			print("Error processing envelope files/no valid bins found.")
 			return 1
@@ -863,9 +847,10 @@ Output:
 	total_files = len(yoda_files)
 	for idx, (yoda_file, label) in enumerate(zip(yoda_files, labels), start=1):
 		print(f"\rProcessing {idx}/{total_files} files...", end='', flush=True)
-		file_summaries, file_obs_data = process_single_file(args, loader, yoda_file, label,
+		file_summaries, file_obs_data = process_single_file(loader, yoda_file, label,
 			weights_dict=weights, weighted=args.weighted, valid_bins=valid_bins,
-			analyses_set=analyses, pattern=args.pattern, show_analyses=show_analyses)
+			analyses_set=analyses, pattern=args.pattern, show_analyses=show_analyses,
+			debug=args.debug)
 		summaries.extend(file_summaries)
 		obs_stats.extend(file_obs_data)
 		print('\r' + ' ' * 50 + '\r', end='', flush=True)
@@ -895,4 +880,4 @@ Output:
 
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())

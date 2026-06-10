@@ -1,6 +1,6 @@
 
-import sys
 import os
+import sys
 import json
 import shutil
 import argparse
@@ -103,4 +103,4 @@ If --xmin and --xmax fields exist in the JSON, they are preserved in the final m
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
