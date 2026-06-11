@@ -153,8 +153,8 @@ class YodaLoader:
 		else:
 			raise TypeError(f"Unsupported YODA object {type(obj).__name__}: missing callable path() method.")
 
-		# --- Note ----------------------------------------------------------------------------- #
-		# For Profile objects, mkScatter() and point.errs() returns errors equal to zero.        #
+		# --- Note ------------------------------------------------------------------------------ #
+		# For Profile objects, mkScatter() and point.errs() returns errors equal to zero.         #
 		# This means we have to use Profile specific methods in this case (tested for Profile1D). #
 		# --------------------------------------------------------------------------------------- #
 

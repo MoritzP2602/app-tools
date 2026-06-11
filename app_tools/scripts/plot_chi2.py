@@ -639,6 +639,8 @@ def create_index_html(command, summaries, data_dict, series_ids, per_analysis_la
     return
 
 
+# --- Interactive html creation --------------------------------------------------------- #
+
 def build_interactive_payload(data_dict, series_ids, per_analysis_labels, default_label, log_scale):
     """Build the JSON-serializable data payload embedded into interactive.html."""
 
@@ -681,20 +683,15 @@ def build_interactive_payload(data_dict, series_ids, per_analysis_labels, defaul
             style = series_style(is_default, plot_index)
             if not is_default:
                 plot_index += 1
-
-            series_entries.append({
-                'label'     : label,
-                'source'    : sid[1],
-                'values'    : [finite_or_none(bin_data.get(bid)) for bid in bin_ids],
-                'chi2'      : [finite_or_none(chi2_map.get(bid)) for bid in bin_ids],
-                'ndf'       : [finite_or_none(ndf_map.get(bid)) for bid in bin_ids],
-                'color'     : style['color'],
-                'symbol'    : PLOTLY_MARKER_SYMBOLS.get(style['marker'], 'circle'),
-                'is_default': is_default,
-            })
-
+            series_entries.append({'label'     : label,
+                                   'source'    : sid[1],
+                                   'values'    : [finite_or_none(bin_data.get(bid)) for bid in bin_ids],
+                                   'chi2'      : [finite_or_none(chi2_map.get(bid)) for bid in bin_ids],
+                                   'ndf'       : [finite_or_none(ndf_map.get(bid)) for bid in bin_ids],
+                                   'color'     : style['color'],
+                                   'symbol'    : PLOTLY_MARKER_SYMBOLS.get(style['marker'], 'circle'),
+                                   'is_default': is_default})
         analyses[analysis_name] = {'bin_ids': [str(bid) for bid in bin_ids], 'series': series_entries}
-
     return {'default_label': default_label, 'log_scale': bool(log_scale), 'analyses': analyses}
 
 INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
@@ -1064,6 +1061,9 @@ def add_interactive_link_to_index(output_dir):
         index_path.write_text(text, encoding="utf-8")
     return
 
+# --------------------------------------------------------------------------------------- #
+
+
 
 def build_parser():
     """Build the argument parser for per-analysis chi2 plots."""
@@ -1092,7 +1092,6 @@ Output:
     parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
     parser.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
     parser.add_argument("-i", "--interactive", action="store_true", help="Additionally create an interactive plot page")
-
     return parser
 
 
