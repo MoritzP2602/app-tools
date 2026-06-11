@@ -639,6 +639,432 @@ def create_index_html(command, summaries, data_dict, series_ids, per_analysis_la
     return
 
 
+def build_interactive_payload(data_dict, series_ids, per_analysis_labels, default_label, log_scale):
+    """Build the JSON-serializable data payload embedded into interactive.html."""
+
+    PLOTLY_MARKER_SYMBOLS = {'o': 'circle', 's': 'square', '^': 'triangle-up', 'D': 'diamond',
+                         'v': 'triangle-down', '<': 'triangle-left', '>': 'triangle-right',
+                         'h': 'hexagon'}
+
+    def finite_or_none(value):
+        """Convert value to a finite float or None, so it can be embedded as JSON."""
+        out = to_float_or_nan(value)
+        return float(out) if np.isfinite(out) else None
+    
+    analyses = {}
+    for analysis_name in sorted(data_dict.keys()):
+        analysis_data = data_dict[analysis_name]
+        if not analysis_data:
+            continue
+        prepared = prepare_series_data(analysis_data, series_ids, None, analysis_name)
+        if prepared is None:
+            continue
+        plot_series        = prepared['plot_series']
+        bin_ids            = prepared['bin_ids']
+        series_to_bin_data = prepared['series_to_bin_data']
+
+        default_candidates = [sid for sid in plot_series if default_label and sid[0] == default_label]
+        default_series_id  = default_candidates[0] if len(default_candidates) == 1 else None
+
+        analysis_label_map = per_analysis_labels.get(analysis_name, {})
+        series_entries = []
+        plot_index = 0
+        for sid in plot_series:
+            bin_data = series_to_bin_data[sid]
+            chi2_map = {obs_id: chi2 for obs_id, chi2, ndf, _ in analysis_data[sid]}
+            ndf_map  = {obs_id: ndf for obs_id, chi2, ndf, _ in analysis_data[sid]}
+
+            is_default = bool(default_series_id and sid == default_series_id)
+            label      = analysis_label_map.get(sid, sid[0])
+            if is_default and 'default' not in label.lower():
+                label = f'{label} (default)'
+            style = series_style(is_default, plot_index)
+            if not is_default:
+                plot_index += 1
+
+            series_entries.append({
+                'label'     : label,
+                'source'    : sid[1],
+                'values'    : [finite_or_none(bin_data.get(bid)) for bid in bin_ids],
+                'chi2'      : [finite_or_none(chi2_map.get(bid)) for bid in bin_ids],
+                'ndf'       : [finite_or_none(ndf_map.get(bid)) for bid in bin_ids],
+                'color'     : style['color'],
+                'symbol'    : PLOTLY_MARKER_SYMBOLS.get(style['marker'], 'circle'),
+                'is_default': is_default,
+            })
+
+        analyses[analysis_name] = {'bin_ids': [str(bid) for bid in bin_ids], 'series': series_entries}
+
+    return {'default_label': default_label, 'log_scale': bool(log_scale), 'analyses': analyses}
+
+INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>__TITLE__ - interactive</title>
+        <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+        <style>
+        html { font-family: sans-serif; }
+        a { text-decoration: none; font-weight: bold; }
+        .controls { display: flex; flex-wrap: wrap; gap: 1.2em; align-items: center; margin: 0.8em 0; }
+        .controls > div { display: flex; align-items: center; gap: 0.4em; }
+        .controls select { max-width: 28em; }
+        button { padding: 2px 12px; cursor: pointer; }
+        button.active { background: #3366FF; color: #fff; border: 1px solid #3366FF; }
+        #series-panel { display: flex; flex-wrap: wrap; gap: 0.4em 1.6em; margin: 0.6em 0 1em 0; }
+        .series-row { display: flex; align-items: center; gap: 0.4em; }
+        .series-row input[type=color] { width: 2.2em; height: 1.7em; padding: 0; border: 1px solid #ccc; cursor: pointer; }
+        .series-row small { color: #666; }
+        footer { clear: both; margin-top: 3em; padding-top: 1em; }
+        </style>
+    </head>
+    <body>
+        <h2>__TITLE__ &mdash; interactive</h2>
+        <p><a href="index.html">Back to static report</a></p>
+        <div class="controls">
+            <div><label for="analysis-select">Analysis:</label><select id="analysis-select"></select></div>
+            <div><button id="log-toggle" title="Toggle logarithmic y-axis">log</button></div>
+            <div><label for="ref-select">Ratio reference:</label><select id="ref-select"></select></div>
+            <div><label for="sort-select">Bin order:</label>
+                <select id="sort-select" title="Sort bins by decreasing χ²/ndf of the ratio reference series (max over shown series if no reference is selected)">
+                    <option value="natural">natural</option>
+                    <option value="chi2">by reference &chi;&sup2;/ndf</option>
+                </select>
+            </div>
+            <div><label><input type="checkbox" id="unity-line"> &chi;&sup2;/ndf = 1 line</label></div>
+            <div><button id="reset-button" title="Reset all settings for the current analysis">Reset</button></div>
+        </div>
+        <div id="series-panel"></div>
+        <div id="plot" style="width:100%;height:750px;"></div>
+        <p style="color:#666; font-size:0.9em;">Tip: click legend entries to hide/show a series, use the checkboxes
+        and colour pickers above, drag to zoom.</p>
+        <footer>
+        <p>Generated at __NOW__</p>
+        <p>Created with command: <pre>__COMMAND__</pre></p>
+        </footer>
+        <script>
+        const DATA = __PAYLOAD__;
+
+        const plotDiv        = document.getElementById('plot');
+        const analysisSelect = document.getElementById('analysis-select');
+        const refSelect      = document.getElementById('ref-select');
+        const sortSelect     = document.getElementById('sort-select');
+        const logButton      = document.getElementById('log-toggle');
+        const unityCheckbox  = document.getElementById('unity-line');
+        const resetButton    = document.getElementById('reset-button');
+        const seriesPanel    = document.getElementById('series-panel');
+
+        const analysisNames = Object.keys(DATA.analyses);
+        const state = {};
+        let currentAnalysis = analysisNames[0];
+        let logScale = DATA.log_scale;
+        let showUnityLine = false;
+        let traceSeriesIndex = [];
+
+        function plainLabel(series) {
+            return series.label.replace(/<sup>(.*?)<\/sup>/g, ' ($1)').replace(/<[^>]*>/g, '');
+        }
+
+        function hexToRgba(hex, alpha) {
+            const v = hex.replace('#', '');
+            const r = parseInt(v.substring(0, 2), 16);
+            const g = parseInt(v.substring(2, 4), 16);
+            const b = parseInt(v.substring(4, 6), 16);
+            return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+        }
+
+        function getState(name) {
+            if (!state[name]) {
+                const analysis = DATA.analyses[name];
+                state[name] = {
+                    colors : analysis.series.map(s => s.color),
+                    visible: analysis.series.map(() => true),
+                    ref    : analysis.series.findIndex(s => s.is_default),
+                    sort   : 'natural',
+                };
+            }
+            return state[name];
+        }
+
+        function binPermutation(name) {
+            const analysis = DATA.analyses[name];
+            const st = getState(name);
+            const indices = analysis.bin_ids.map((bid, j) => j);
+            if (st.sort !== 'chi2') {
+                return indices;
+            }
+            const ref = st.ref >= 0 ? analysis.series[st.ref] : null;
+            const score = analysis.bin_ids.map((bid, j) => {
+                if (ref !== null) {
+                    return ref.values[j] !== null ? ref.values[j] : -1;
+                }
+                let best = -1;
+                analysis.series.forEach((s, i) => {
+                    if (st.visible[i] && s.values[j] !== null && s.values[j] > best) best = s.values[j];
+                });
+                return best;
+            });
+            indices.sort((a, b) => score[b] - score[a]);
+            return indices;
+        }
+
+        function buildTraces(name) {
+            const analysis = DATA.analyses[name];
+            const st = getState(name);
+            const hasRatio = st.ref >= 0 && analysis.series.length > 1;
+            const perm = binPermutation(name);
+            const orderedBins = perm.map(j => analysis.bin_ids[j]);
+            const traces = [];
+            traceSeriesIndex = [];
+
+            analysis.series.forEach((s, i) => {
+                traces.push({
+                    x: orderedBins,
+                    y: perm.map(j => s.values[j]),
+                    customdata: perm.map(j => [s.chi2[j], s.ndf[j]]),
+                    name: s.label,
+                    mode: 'lines+markers',
+                    marker: {color: st.colors[i], symbol: s.symbol, size: 9},
+                    line: {color: hexToRgba(st.colors[i], 0.4), width: 2},
+                    visible: st.visible[i] ? true : 'legendonly',
+                    legendgroup: 'series' + i,
+                    yaxis: 'y',
+                    hovertemplate: '%{x}<br>χ²/ndf = %{y:.3f}<br>χ² = %{customdata[0]:.2f}, ndf = %{customdata[1]}' +
+                                   '<extra>' + plainLabel(s) + '</extra>',
+                });
+                traceSeriesIndex.push(i);
+            });
+
+            if (hasRatio) {
+                const ref = analysis.series[st.ref];
+                analysis.series.forEach((s, i) => {
+                    if (i === st.ref) return;
+                    const ratio = perm.map(j => {
+                        const v = s.values[j];
+                        const d = ref.values[j];
+                        return (v !== null && d !== null && d > 0) ? v / d : null;
+                    });
+                    traces.push({
+                        x: orderedBins,
+                        y: ratio,
+                        name: s.label,
+                        mode: 'lines+markers',
+                        marker: {color: st.colors[i], symbol: s.symbol, size: 7},
+                        line: {color: hexToRgba(st.colors[i], 0.5), width: 1.5},
+                        visible: st.visible[i] ? true : 'legendonly',
+                        legendgroup: 'series' + i,
+                        showlegend: false,
+                        yaxis: 'y2',
+                        hovertemplate: '%{x}<br>ratio = %{y:.3f}<extra>' +
+                                       plainLabel(s) + ' / ' + plainLabel(ref) + '</extra>',
+                    });
+                    traceSeriesIndex.push(i);
+                });
+            }
+            return {traces: traces, hasRatio: hasRatio, orderedBins: orderedBins};
+        }
+
+        function buildLayout(name, hasRatio, orderedBins) {
+            const shapes = [];
+            if (showUnityLine) {
+                shapes.push({type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: 1, y1: 1,
+                             line: {color: '#898C89', width: 1, dash: 'dash'}});
+            }
+            if (hasRatio) {
+                shapes.push({type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 1, y1: 1,
+                             line: {color: '#898C89', width: 1, dash: 'dash'}});
+            }
+            const layout = {
+                title: {text: name, font: {size: 22}},
+                hovermode: 'closest',
+                legend: {orientation: 'h', x: 0, y: 1.02, xanchor: 'left', yanchor: 'bottom'},
+                margin: {l: 80, r: 30, t: 120, b: 100},
+                xaxis: {
+                    type: 'category',
+                    categoryorder: 'array',
+                    categoryarray: orderedBins,
+                    tickangle: -90,
+                    automargin: true,
+                    anchor: hasRatio ? 'y2' : 'y',
+                },
+                yaxis: {
+                    title: {text: 'χ² / ndf'},
+                    type: logScale ? 'log' : 'linear',
+                    domain: hasRatio ? [0.30, 1.0] : [0.0, 1.0],
+                    automargin: true,
+                },
+                shapes: shapes,
+            };
+            if (hasRatio) {
+                layout.yaxis2 = {
+                    title: {text: 'data / reference'},
+                    domain: [0.0, 0.24],
+                    range: [0.0, 2.0],
+                    automargin: true,
+                };
+            }
+            return layout;
+        }
+
+        function render() {
+            const built = buildTraces(currentAnalysis);
+            const layout = buildLayout(currentAnalysis, built.hasRatio, built.orderedBins);
+            const config = {
+                responsive: true,
+                displaylogo: false,
+                scrollZoom: true,
+                toImageButtonOptions: {format: 'png', scale: 2,
+                                       filename: currentAnalysis.replace(/[\/ ]/g, '_') + '_chi2_interactive'},
+            };
+            Plotly.react(plotDiv, built.traces, layout, config);
+            logButton.classList.toggle('active', logScale);
+        }
+
+        function rebuildControls() {
+            const analysis = DATA.analyses[currentAnalysis];
+            const st = getState(currentAnalysis);
+
+            refSelect.innerHTML = '';
+            const noneOption = document.createElement('option');
+            noneOption.value = '-1';
+            noneOption.textContent = '(none)';
+            refSelect.appendChild(noneOption);
+            analysis.series.forEach((s, i) => {
+                const option = document.createElement('option');
+                option.value = String(i);
+                option.textContent = plainLabel(s) + '  [' + s.source + ']';
+                refSelect.appendChild(option);
+            });
+            refSelect.value = String(st.ref);
+            sortSelect.value = st.sort;
+            unityCheckbox.checked = showUnityLine;
+
+            seriesPanel.innerHTML = '';
+            analysis.series.forEach((s, i) => {
+                const row = document.createElement('div');
+                row.className = 'series-row';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = st.visible[i];
+                checkbox.addEventListener('change', () => {
+                    st.visible[i] = checkbox.checked;
+                    render();
+                });
+
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = st.colors[i];
+                colorInput.addEventListener('input', () => {
+                    st.colors[i] = colorInput.value;
+                    render();
+                });
+
+                const text = document.createElement('span');
+                text.innerHTML = s.label + ' <small>[' + s.source + ']</small>';
+
+                row.appendChild(checkbox);
+                row.appendChild(colorInput);
+                row.appendChild(text);
+                seriesPanel.appendChild(row);
+            });
+        }
+
+        function syncCheckboxes() {
+            const st = getState(currentAnalysis);
+            seriesPanel.querySelectorAll('input[type=checkbox]').forEach((checkbox, i) => {
+                checkbox.checked = st.visible[i];
+            });
+        }
+
+        if (analysisNames.length === 0) {
+            plotDiv.textContent = 'No chi2 data available.';
+        } else {
+            analysisNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                analysisSelect.appendChild(option);
+            });
+            analysisSelect.value = currentAnalysis;
+
+            analysisSelect.addEventListener('change', () => {
+                currentAnalysis = analysisSelect.value;
+                rebuildControls();
+                render();
+            });
+            refSelect.addEventListener('change', () => {
+                getState(currentAnalysis).ref = parseInt(refSelect.value, 10);
+                render();
+            });
+            sortSelect.addEventListener('change', () => {
+                getState(currentAnalysis).sort = sortSelect.value;
+                render();
+            });
+            logButton.addEventListener('click', () => {
+                logScale = !logScale;
+                render();
+            });
+            unityCheckbox.addEventListener('change', () => {
+                showUnityLine = unityCheckbox.checked;
+                render();
+            });
+            resetButton.addEventListener('click', () => {
+                delete state[currentAnalysis];
+                logScale = DATA.log_scale;
+                showUnityLine = false;
+                rebuildControls();
+                render();
+            });
+
+            rebuildControls();
+            render();
+            plotDiv.on('plotly_restyle', (event) => {
+                const update = event[0];
+                const indices = event[1];
+                if (!update || update.visible === undefined || !indices) return;
+                const values = Array.isArray(update.visible) ? update.visible : [update.visible];
+                const st = getState(currentAnalysis);
+                indices.forEach((traceIdx, k) => {
+                    const seriesIdx = traceSeriesIndex[traceIdx];
+                    if (seriesIdx === undefined) return;
+                    st.visible[seriesIdx] = values[k % values.length] === true;
+                });
+                syncCheckboxes();
+            });
+        }
+        </script>
+    </body>
+</html>"""
+
+def create_interactive_html(command, payload, output_dir):
+    """Create interactive.html, a Plotly-based interactive view of the chi2 data."""
+    payload_json = json.dumps(payload).replace("</", "<\\/")
+    now = datetime.datetime.now().strftime("%A, %d. %B %Y %H:%M")
+    html = (INTERACTIVE_TEMPLATE
+            .replace("__TITLE__", str(output_dir))
+            .replace("__NOW__", now)
+            .replace("__COMMAND__", command)
+            .replace("__PAYLOAD__", payload_json))
+    out_path = os.path.join(output_dir, "interactive.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"Created {out_path}")
+    return
+
+def add_interactive_link_to_index(output_dir):
+    """Add a link to interactive.html at the bottom of an existing index.html."""
+    index_path = Path(output_dir) / "index.html"
+    if not index_path.exists():
+        return
+    text = index_path.read_text(encoding="utf-8")
+    link_html = ('<br><p><a href="interactive.html">Open interactive version of these plots</a></p></body>')
+    if "interactive.html" not in text and "    </body>" in text:
+        text = text.replace("    </body>", link_html, 1)
+        index_path.write_text(text, encoding="utf-8")
+    return
+
+
 def build_parser():
     """Build the argument parser for per-analysis chi2 plots."""
     parser = argparse.ArgumentParser(
@@ -665,6 +1091,7 @@ Output:
     parser.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
     parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
     parser.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
+    parser.add_argument("-i", "--interactive", action="store_true", help="Additionally create an interactive plot page")
 
     return parser
 
@@ -720,7 +1147,6 @@ def main():
             if default_label not in labels:
                 labels.insert(0, default_label)
                 series_ids = [sid for sid in available_series_ids if sid[0] in labels]
-
     per_analysis_labels_html, per_analysis_labels_mpl = assign_superscripts_per_analysis(data_dict, series_ids)
 
     plot_chi2_per_analysis(data_dict, series_ids, per_analysis_labels_mpl,
@@ -735,6 +1161,11 @@ def main():
                       input_file=", ".join(str(p) for p in json_paths),
                       source_command="\n".join(source_commands),
                       output_dir=args.outdir)
+    if args.interactive:
+        payload = build_interactive_payload(data_dict, series_ids, per_analysis_labels_html,
+                                            default_label=default_label, log_scale=args.log)
+        create_interactive_html(command, payload, args.outdir)
+        add_interactive_link_to_index(args.outdir)
     return 0
 
 
