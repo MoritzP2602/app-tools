@@ -824,7 +824,7 @@ def validate_template_parameter_match(template_content, parameter_names):
     return
 
 
-def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaults_path, outdir, precision, nominal_path=None):
+def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaults_path, outdir, precision):
     if not os.path.isdir(scan_dir):
         fail(f"Scan directory '{scan_dir}' not found")
 
@@ -848,7 +848,6 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
             fail(f"No '{tune_prefix}*' subdirectories found in '{scan_dir}'")
         fail(f"No subdirectories found in '{scan_dir}'")
 
-    reweighting_variations = []
     for subdir in tune_subdirs:
         full_subdir = os.path.join(scan_dir, subdir)
         min_files = glob.glob(os.path.join(full_subdir, "minimum_*.txt"))
@@ -874,7 +873,6 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
             print(f"Warning: Skipping {subdir}: missing template fields: {', '.join(missing_fields)}.")
             continue
         params_for_template = {name: params[name] for name in template_fields}
-        reweighting_variations.append(params_for_template)
         target = os.path.join(outdir, subdir)
         if os.path.exists(target):
             print(f"Skipping {target} (already exists).")
@@ -887,38 +885,6 @@ def run_tune_mode(scan_dir, template_name, template_content, tune_prefix, defaul
         os.makedirs(target)
         with open(os.path.join(target, template_name), "w") as f:
             f.write(rendered)
-
-    if nominal_path is not None:
-        if not reweighting_variations:
-            fail("No valid tune parameter sets found for combined reweighting runcard generation")
-
-        nominal_values = ParameterGrid.load_nominal_values(nominal_path)
-        param_dict = OrderedDict()
-        for name in template_fields:
-            if name not in nominal_values:
-                fail(f"Nominal value for parameter '{name}' is missing")
-            entry = nominal_values[name]
-            if is_number(entry):
-                nominal_value = float(entry)
-            elif isinstance(entry, list) and len(entry) == 1 and is_number(entry[0]):
-                nominal_value = float(entry[0])
-            else:
-                fail(f"Nominal entry for '{name}' must be numeric or a single-element numeric list in tune mode")
-            if precision is not None:
-                nominal_value = round(nominal_value, precision)
-            param_dict[name] = [nominal_value]
-
-        for params in reweighting_variations:
-            for name in template_fields:
-                variation_value = float(params[name])
-                if precision is not None:
-                    variation_value = round(variation_value, precision)
-                param_dict[name].append(variation_value)
-
-        combined_reweighting_dir = os.path.join(outdir, "rew")
-        os.makedirs(combined_reweighting_dir, exist_ok=True)
-        with open(os.path.join(combined_reweighting_dir, template_name), "w") as f:
-            f.write(template_content.format(**param_dict))
     return
 
 
@@ -980,10 +946,8 @@ Examples:
         create_grid.py import newscan.grid.dat TEMPLATE.yaml --nominal nominal.json -o output
   Import from existing scan directory:
     create_grid.py import newscan/ TEMPLATE.yaml
-    Generate runcards from tune results:
-        create_grid.py tune tunes/ TEMPLATE.yaml
-      Generate tune runcards and one combined reweighting runcard:
-          create_grid.py tune tunes/ TEMPLATE.yaml --nominal nominal.json
+  Generate runcards from tune results:
+    create_grid.py tune tunes/ TEMPLATE.yaml
   Generate runcards with min/max extremes:
     create_grid.py minmax parameters.json TEMPLATE.yaml --defaults defaults.json
   Plot all parameter-pair projections from existing table:
@@ -1039,7 +1003,6 @@ Advanced Features:
     p_tune.add_argument("-d", "--defaults", help="Optional defaults JSON")
     p_tune.add_argument("--tune-prefix", default="", help="Optional prefix for tune subdirectories (default: use all subdirectories)")
     p_tune.add_argument("--precision", type=int, default=3, help="Decimal rounding for imported tune params")
-    p_tune.add_argument("-r", "--nominal", help="Nominal parameter file for one combined reweighting runcard")
 
     p_minmax = sub.add_parser("minmax", help="Generate min/max points per parameter")
     p_minmax.add_argument("parameters", help="Parameter definition file (.json/.txt)")
@@ -1216,10 +1179,9 @@ def main():
             tune_prefix=args.tune_prefix,
             defaults_path=args.defaults,
             outdir=args.outdir,
-            precision=args.precision,
-            nominal_path=args.nominal)
+            precision=args.precision)
         print_non_sampling_summary(command="tune", source_msg=f"existing directory: {args.scan_dir}", 
-                                   defaults=args.defaults, tune_prefix=args.tune_prefix, nominal=args.nominal)
+                                   defaults=args.defaults, tune_prefix=args.tune_prefix)
         print_outputs(args.outdir, wrote_table=False, wrote_reweighting=False)
         return
 
