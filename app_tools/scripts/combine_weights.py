@@ -31,16 +31,28 @@ def read_weights(path, scale):
 
 def read_objective_value_from_tune_dir(tune_dir):
     minimum_files = sorted(glob.glob(os.path.join(tune_dir, "minimum_*.txt")))
-    if not minimum_files:
-        raise FileNotFoundError(f"No file matching 'minimum_*.txt' found in directory: {tune_dir}")
+    results_files = sorted(glob.glob(os.path.join(tune_dir, "results.txt")))
+    candidate_files = minimum_files + results_files
 
-    minimum_file = minimum_files[0]
-    with open(minimum_file) as f:
-        for line in f:
-            match = re.search(r"Objective value at best fit point:\s*([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)", line)
-            if match: return float(match.group(1)), minimum_file
+    if not candidate_files:
+        raise FileNotFoundError(
+            f"No file matching 'minimum_*.txt' or 'results.txt' found in directory: {tune_dir}")
 
-    raise ValueError(f"Could not find 'Objective value at best fit point' in file: {minimum_file}")
+    objective_patterns = [
+        r"^\s*# Objective value at best fit point:\s*([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)",
+        r"^\s*# GOF\s+([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*$",
+    ]
+
+    for objective_file in candidate_files:
+        with open(objective_file) as f:
+            for line in f:
+                for pattern in objective_patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        return float(match.group(1)), objective_file
+
+    raise ValueError(
+        f"Could not find 'Objective value at best fit point' or 'GOF' in files under: {tune_dir}")
 
 
 def main():
@@ -62,8 +74,11 @@ Input mode A (manual scales):
 
 Input mode B (auto scales from tune directories):
     file1 tune_dir1 [file2 tune_dir2 ...]
-    For each tune directory, the script reads minimum_*.txt and extracts:
-        Objective value at best fit point: X
+    For each tune directory, the script reads minimum_*.txt (Apprentice) first, then results.txt (Professor2),
+    and extracts either (Apprentice):
+        # Objective value at best fit point: X
+    or (Professor2):
+        # GOF X
     It then computes scale factors as:
         sqrt(min(X_i) / X_i)
     so the smallest objective value gets scale 1.0 automatically.
@@ -136,7 +151,7 @@ Scaling example:
                     out.write(f"{key} {value:.3f} {comment}\n")
                 else:
                     out.write(f"{key} {value:.3f}\n")
-    print(f"\nOutput written to: {args.output}.\n")
+    print(f"\nOutput written to: {args.output}.")
 
 
 if __name__ == "__main__":

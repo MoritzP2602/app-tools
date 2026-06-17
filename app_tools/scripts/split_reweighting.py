@@ -280,7 +280,7 @@ def split_yodas(input_dir, variation_pattern, output_dir, variations_file=None, 
         if not equal_variations:
             param_offset += len(var_numbers)
 
-    print(f"\nDone! Created {total_output_dirs} subdirectories in {output_dir}\n")
+    print(f"\nDone! Created {total_output_dirs} subdirectories in {output_dir}.")
     return
 
 

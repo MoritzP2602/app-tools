@@ -48,7 +48,7 @@ def split_weight_file(input_path, n, out_dir=None):
         for path in out_paths:
             f.write(path + "\n")
 
-    print(f"\nDone. Wrote {n} files to {out_dir} and listed them in {weight_file}.\n")
+    print(f"\nDone. Wrote {n} files to {out_dir} and listed them in {weight_file}.")
 
 
 def main():

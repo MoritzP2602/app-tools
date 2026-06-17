@@ -57,7 +57,7 @@ def merge_jsons_in_dir(json_dir, keep_dir=False, out_file=None):
     if os.path.exists(json_dir) and not keep_dir:
         shutil.rmtree(json_dir)
         print(f"Deleted directory {json_dir}.")
-    print(f"\nDone. Merged {n} JSON files into {out_file}.\n")
+    print(f"\nDone. Merged {n} JSON files into {out_file}.")
 
 
 def main():

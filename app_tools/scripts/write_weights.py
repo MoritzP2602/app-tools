@@ -121,7 +121,7 @@ Warnings are printed for observables that cannot be found in Rivet references.
 
     print(f"Total number of observables: {len(observables)}")
     print(f"Total number of bins: {total_bins}")
-    print(f"\nOutput written to: {args.output}\n")
+    print(f"\nOutput written to: {args.output}.")
 
 
 if __name__ == "__main__":
