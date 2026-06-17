@@ -698,7 +698,7 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
 <html>
     <head>
         <meta charset="utf-8">
-        <title>__TITLE__ - interactive</title>
+        <title>__TITLE__ - interactive [EXPERIMENTAL]</title>
         <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
         <style>
         html { font-family: sans-serif; }
@@ -721,9 +721,10 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
         <div class="controls">
             <div><label for="analysis-select">Analysis:</label><select id="analysis-select"></select></div>
             <div><button id="log-toggle" title="Toggle logarithmic y-axis">log</button></div>
-            <div><label for="ref-select">Ratio reference:</label><select id="ref-select"></select></div>
+            <div><button id="ratio-toggle" title="Toggle ratio subplot">ratio</button></div>
+            <div><label for="ref-select">Reference:</label><select id="ref-select"></select></div>
             <div><label for="sort-select">Bin order:</label>
-                <select id="sort-select" title="Sort bins by decreasing χ²/ndf of the ratio reference series (max over shown series if no reference is selected)">
+                <select id="sort-select" title="Sort bins by decreasing χ²/ndf of the reference series">
                     <option value="natural">natural</option>
                     <option value="chi2">by reference &chi;&sup2;/ndf</option>
                 </select>
@@ -747,15 +748,22 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
         const refSelect      = document.getElementById('ref-select');
         const sortSelect     = document.getElementById('sort-select');
         const logButton      = document.getElementById('log-toggle');
+        const ratioButton    = document.getElementById('ratio-toggle');
         const unityCheckbox  = document.getElementById('unity-line');
         const resetButton    = document.getElementById('reset-button');
         const seriesPanel    = document.getElementById('series-panel');
 
         const analysisNames = Object.keys(DATA.analyses);
-        const state = {};
+        const state = {
+            colors       : [],
+            visible      : [],
+            ref          : -1,
+            sort         : 'natural',
+            logScale     : DATA.log_scale,
+            showUnityLine: false,
+            showRatioPlot: true,
+        };
         let currentAnalysis = analysisNames[0];
-        let logScale = DATA.log_scale;
-        let showUnityLine = false;
         let traceSeriesIndex = [];
 
         function plainLabel(series) {
@@ -771,23 +779,20 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
         }
 
         function getState(name) {
-            if (!state[name]) {
-                const analysis = DATA.analyses[name];
-                state[name] = {
-                    colors : analysis.series.map(s => s.color),
-                    visible: analysis.series.map(() => true),
-                    ref    : analysis.series.findIndex(s => s.is_default),
-                    sort   : 'natural',
-                };
+            const analysis = DATA.analyses[name];
+            while (state.colors.length < analysis.series.length) {
+                const i = state.colors.length;
+                state.colors.push(analysis.series[i].color);
+                state.visible.push(true);
             }
-            return state[name];
+            return state;
         }
 
         function binPermutation(name) {
             const analysis = DATA.analyses[name];
             const st = getState(name);
             const indices = analysis.bin_ids.map((bid, j) => j);
-            if (st.sort !== 'chi2') {
+            if (st.sort !== 'chi2' || st.ref < 0) {
                 return indices;
             }
             const ref = st.ref >= 0 ? analysis.series[st.ref] : null;
@@ -809,6 +814,7 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
             const analysis = DATA.analyses[name];
             const st = getState(name);
             const hasRatio = st.ref >= 0 && analysis.series.length > 1;
+            const showRatioPlot = hasRatio && st.showRatioPlot;
             const perm = binPermutation(name);
             const orderedBins = perm.map(j => analysis.bin_ids[j]);
             const traces = [];
@@ -832,7 +838,7 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
                 traceSeriesIndex.push(i);
             });
 
-            if (hasRatio) {
+            if (showRatioPlot) {
                 const ref = analysis.series[st.ref];
                 analysis.series.forEach((s, i) => {
                     if (i === st.ref) return;
@@ -858,16 +864,17 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
                     traceSeriesIndex.push(i);
                 });
             }
-            return {traces: traces, hasRatio: hasRatio, orderedBins: orderedBins};
+            return {traces: traces, hasRatio: hasRatio, showRatioPlot: showRatioPlot, orderedBins: orderedBins};
         }
 
-        function buildLayout(name, hasRatio, orderedBins) {
+        function buildLayout(name, hasRatio, showRatioPlot, orderedBins) {
+            const st = getState(name);
             const shapes = [];
-            if (showUnityLine) {
+            if (st.showUnityLine) {
                 shapes.push({type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: 1, y1: 1,
                              line: {color: '#898C89', width: 1, dash: 'dash'}});
             }
-            if (hasRatio) {
+            if (showRatioPlot) {
                 shapes.push({type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 1, y1: 1,
                              line: {color: '#898C89', width: 1, dash: 'dash'}});
             }
@@ -876,23 +883,24 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
                 hovermode: 'closest',
                 legend: {orientation: 'h', x: 0, y: 1.02, xanchor: 'left', yanchor: 'bottom'},
                 margin: {l: 80, r: 30, t: 120, b: 100},
+                uirevision: name,
                 xaxis: {
                     type: 'category',
                     categoryorder: 'array',
                     categoryarray: orderedBins,
                     tickangle: -90,
                     automargin: true,
-                    anchor: hasRatio ? 'y2' : 'y',
+                    anchor: showRatioPlot ? 'y2' : 'y',
                 },
                 yaxis: {
                     title: {text: 'χ² / ndf'},
-                    type: logScale ? 'log' : 'linear',
-                    domain: hasRatio ? [0.30, 1.0] : [0.0, 1.0],
+                    type: st.logScale ? 'log' : 'linear',
+                    domain: showRatioPlot ? [0.30, 1.0] : [0.0, 1.0],
                     automargin: true,
                 },
                 shapes: shapes,
             };
-            if (hasRatio) {
+            if (showRatioPlot) {
                 layout.yaxis2 = {
                     title: {text: 'data / reference'},
                     domain: [0.0, 0.24],
@@ -904,8 +912,9 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
         }
 
         function render() {
+            const st = getState(currentAnalysis);
             const built = buildTraces(currentAnalysis);
-            const layout = buildLayout(currentAnalysis, built.hasRatio, built.orderedBins);
+            const layout = buildLayout(currentAnalysis, built.hasRatio, built.showRatioPlot, built.orderedBins);
             const config = {
                 responsive: true,
                 displaylogo: false,
@@ -914,7 +923,13 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
                                        filename: currentAnalysis.replace(/[\/ ]/g, '_') + '_chi2_interactive'},
             };
             Plotly.react(plotDiv, built.traces, layout, config);
-            logButton.classList.toggle('active', logScale);
+            logButton.classList.toggle('active', st.logScale);
+            ratioButton.classList.toggle('active', built.showRatioPlot);
+            ratioButton.disabled = !built.hasRatio;
+            ratioButton.title = built.hasRatio
+                ? (built.showRatioPlot ? 'Hide ratio subplot' : 'Show ratio subplot')
+                : 'Select a reference to enable the ratio subplot';
+            unityCheckbox.checked = st.showUnityLine;
         }
 
         function rebuildControls() {
@@ -933,8 +948,14 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
                 refSelect.appendChild(option);
             });
             refSelect.value = String(st.ref);
+            if (st.ref < 0) {
+                st.sort = 'natural';
+            }
             sortSelect.value = st.sort;
-            unityCheckbox.checked = showUnityLine;
+            sortSelect.disabled = st.ref < 0;
+            logButton.classList.toggle('active', st.logScale);
+            ratioButton.classList.toggle('active', st.showRatioPlot);
+            unityCheckbox.checked = st.showUnityLine;
 
             seriesPanel.innerHTML = '';
             analysis.series.forEach((s, i) => {
@@ -992,24 +1013,36 @@ INTERACTIVE_TEMPLATE = r"""<!DOCTYPE html>
             });
             refSelect.addEventListener('change', () => {
                 getState(currentAnalysis).ref = parseInt(refSelect.value, 10);
+                rebuildControls();
                 render();
             });
             sortSelect.addEventListener('change', () => {
                 getState(currentAnalysis).sort = sortSelect.value;
                 render();
             });
+            ratioButton.addEventListener('click', () => {
+                const st = getState(currentAnalysis);
+                st.showRatioPlot = !st.showRatioPlot;
+                rebuildControls();
+                render();
+            });
             logButton.addEventListener('click', () => {
-                logScale = !logScale;
+                getState(currentAnalysis).logScale = !getState(currentAnalysis).logScale;
                 render();
             });
             unityCheckbox.addEventListener('change', () => {
-                showUnityLine = unityCheckbox.checked;
+                getState(currentAnalysis).showUnityLine = unityCheckbox.checked;
                 render();
             });
             resetButton.addEventListener('click', () => {
-                delete state[currentAnalysis];
-                logScale = DATA.log_scale;
-                showUnityLine = false;
+                const analysis = DATA.analyses[currentAnalysis];
+                state.colors = analysis.series.map(s => s.color);
+                state.visible = analysis.series.map(() => true);
+                state.ref = analysis.series.findIndex(s => s.is_default);
+                state.sort = 'natural';
+                state.logScale = DATA.log_scale;
+                state.showUnityLine = false;
+                state.showRatioPlot = true;
                 rebuildControls();
                 render();
             });
@@ -1046,7 +1079,8 @@ def create_interactive_html(command, payload, output_dir):
     out_path = os.path.join(output_dir, "interactive.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"Created {out_path}")
+    print(f"Created {out_path} [EXPERIMENTAL]")
+    add_interactive_link_to_index(output_dir)
     return
 
 def add_interactive_link_to_index(output_dir):
@@ -1091,7 +1125,7 @@ Output:
     parser.add_argument("-l", "--labels", nargs="+", default=None, help="Subset/order of labels to plot")
     parser.add_argument("-d", "--default-label", default=None, help="Label to use as default/reference in ratio plots")
     parser.add_argument("--log", action="store_true", help="Use logarithmic scale for y-axis")
-    parser.add_argument("-i", "--interactive", action="store_true", help="Additionally create an interactive plot page")
+    parser.add_argument("-i", "--interactive", action="store_true", help="Additionally create an interactive plot page [EXPERIMENTAL]")
     return parser
 
 
@@ -1164,7 +1198,6 @@ def main():
         payload = build_interactive_payload(data_dict, series_ids, per_analysis_labels_html,
                                             default_label=default_label, log_scale=args.log)
         create_interactive_html(command, payload, args.outdir)
-        add_interactive_link_to_index(args.outdir)
     return 0
 
 
