@@ -505,7 +505,7 @@ def plot_chi2_per_analysis(data_dict, series_ids, per_analysis_labels, default_l
             if n_chunks == 1:
                 print(f"Created plot for {analysis_name}: {output_file_pdf}/png")
             else:
-                print(f"Created plot for {analysis_name} ({chunk_idx + 1}/{n_chunks}): {output_file_pdf}/png")
+                print(f"Created plot for {analysis_name} [{chunk_idx + 1}/{n_chunks}]: {output_file_pdf}/png")
             plt.close(fig)
     print()
     return
